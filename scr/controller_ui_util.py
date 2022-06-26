@@ -87,29 +87,13 @@ def obtain_widget(identifier_list, widget_ids = None):
                 return None
     return res
 
-
-
-
-def move_mouse_new_game():
-    import autoui as aui
-    
-    new_game_btn = obtain_widget( [
+class WID_IDEN:
+    NEW_GAME = [
         ('', 'templeplus/ui/main_menu.json'), 0,    ('pages', 'templeplus/ui/main_menu.json'),   ('page-main-menu', 'templeplus/ui/main_menu.json'),    ('new-game', 'templeplus/ui/main_menu.json')
-    ] )
-    if new_game_btn is None:
-        return False
-    move_mouse_to_widget(new_game_btn)
-    return True
-
-def move_mouse_normal_difficulty():
-    import autoui as aui; 	
-    diff_normal_btn = obtain_widget( [
-        ('', 'templeplus/ui/main_menu.json'), 0,      ('pages', 'templeplus/ui/main_menu.json'),      ('page-difficulty', 'templeplus/ui/main_menu.json'),        ('difficulty-normal', 'templeplus/ui/main_menu.json')
-    ] )
-    if diff_normal_btn is None:
-        return False
-    move_mouse_to_widget(diff_normal_btn)
-    return
+    ] 
+    NORMAL_DIFF = [
+       ('', 'templeplus/ui/main_menu.json'), 0,   ('pages', 'templeplus/ui/main_menu.json'),  ('page-difficulty', 'templeplus/ui/main_menu.json'),        ('difficulty-normal', 'templeplus/ui/main_menu.json')
+    ]
 
 def move_mouse(x,y):
     ''' in screenspace only; useful for UIs (esp. radial menu) '''
@@ -122,6 +106,10 @@ def click_on_obj(obj):
     loc = obj.location
     game.mouse_move_to(loc)
     game.mouse_click()
+    return
+
+def click_mouse(rightclick = 0):
+    game.mouse_click(rightclick)
     return
 
 def click_at(x,y, screenspace = 0):
