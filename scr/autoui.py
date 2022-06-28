@@ -74,6 +74,24 @@ class TWidget:
             " " if self.source_uri and self.name else "" +  \
             self.name
 
+    @property
+    def visible(self):
+        if self.is_legacy_widget:
+            return not self.wid.is_hidden
+        return self.wid.visible
+
+    @property
+    def x(self):
+        if self.is_legacy_widget:
+            return self.wid.x
+        return self.wid.abs_x()
+        
+    @property
+    def y(self):
+        if self.is_legacy_widget:
+            return self.wid.y
+        return self.wid.abs_y()
+                
     def __repr__(self):
         return "TWidget ({}, {})".format(self.id, self.full_name)
 

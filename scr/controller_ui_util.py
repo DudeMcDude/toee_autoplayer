@@ -56,7 +56,7 @@ def click_key_dlg_btn():
     
 def move_mouse_to_widget(wid):
     # type: (aui.TWidget)->None
-    move_mouse(wid.wid.abs_x(), wid.wid.abs_y())
+    move_mouse(wid.x, wid.y)
     return
 
 
@@ -67,6 +67,14 @@ def obtain_widget(identifier_list, widget_ids = None):
     find_res = []
     res = None # type: aui.TWidget
     
+    if isinstance(identifier_list, aui.TWidget):
+        res = identifier_list
+        return res if res.visible else None
+    elif type(identifier_list) == int:
+        widget_id = identifier_list
+        res = aui.TWidget(widget_id)
+        return res if res.visible else None
+
     for wid_identifier in identifier_list:
         
         if type(wid_identifier) == int:
@@ -83,17 +91,30 @@ def obtain_widget(identifier_list, widget_ids = None):
             return None
         if len(find_res) == 1:
             res = find_res[0]
-            if not res.wid.visible:
+            if not res.visible:
                 return None
     return res
 
 class WID_IDEN:
+    # see autoui.TWidgetIdentifier
+    aui.TWidgetIdentifier
     NEW_GAME = [
         ('', 'templeplus/ui/main_menu.json'), 0,    ('pages', 'templeplus/ui/main_menu.json'),   ('page-main-menu', 'templeplus/ui/main_menu.json'),    ('new-game', 'templeplus/ui/main_menu.json')
     ] 
     NORMAL_DIFF = [
        ('', 'templeplus/ui/main_menu.json'), 0,   ('pages', 'templeplus/ui/main_menu.json'),  ('page-difficulty', 'templeplus/ui/main_menu.json'),        ('difficulty-normal', 'templeplus/ui/main_menu.json')
     ]
+    CHAR_POOL_BEGIN_ADVENTURE = 2695
+    TRUE_NEUTRAL_BTN_WID_ID = 2717
+    PARTY_ALIGNMENT_ACCEPT_BTN = 2722
+    CHAR_POOL_CHAR1 = 3234
+    CHAR_POOL_CHAR2 = 3235
+    CHAR_POOL_CHAR3 = 3236
+    CHAR_POOL_CHAR4 = 3237
+    CHAR_POOL_CHAR5 = 3238
+    CHAR_POOL_CHAR6 = 3239
+    CHAR_POOL_ADD_BTN = 3242
+    
 
 def move_mouse(x,y):
     ''' in screenspace only; useful for UIs (esp. radial menu) '''
