@@ -4,7 +4,10 @@ from controllers import GoalSlot
 from controller_ui_util import *
 
 #region utils
-
+debug_prints_en = True
+def debug_print(msg):
+	if debug_prints_en:
+		print(msg)
 
 def get_party_idx(obj):
     i = 0
@@ -27,6 +30,12 @@ def gs_select_me(slot):
 	if game.leader == game.party[idx]:
 		return 1
 	return 0
+
+
+def gs_select_all(slot):
+	press_key(DIK_GRAVE)
+	return 1
+
 
 def gs_click_and_scroll_to_tile(slot):
 	# type: (GoalSlot) -> int
@@ -122,6 +131,168 @@ def gs_arrive_at_tile(slot):
 		if t_el > RETRY_TIME:
 			slot.state = None # this will retry the click and scroll
 	return 0
+
+
+def perform_on_nearest(slot):
+	obj = slot.obj
+	action_type = slot.param1
+	tgt_type	= slot.param2
+	
+	chest_obj = game.obj_list_vicinity(obj.location, tgt_type)[0]
+	container_loc = chest_obj.location
+
+	if obj.is_performing():
+		debug_print("perform_on_nearest: is performing already. 0")
+		return 0
+	if slot.state is None:
+		debug_print("perform_on_nearest: setting state to 0")
+		slot.state = 0
+	elif slot.state == 0: # will only complete this stage when is_performing() == 0 and have queued the action
+		debug_print("perform_on_nearest: setting state to 1")
+		slot.state = 1
+		return 1
+	debug_print("perform_on_nearest: performing action")
+	perf_result = perform_action(action_type, obj, chest_obj, container_loc)
+	# if perf_result == 0:
+		# return 0
+	return 0
+
+
+def loot_nearest_chest(slot):
+	#type: (GoalSlot) -> int
+	obj = slot.obj
+	action_type = D20A_OPEN_CONTAINER
+	tgt_type	= OLC_CONTAINER
+	
+	chest_obj = game.obj_list_vicinity(obj.location, tgt_type)[0]
+	container_loc = chest_obj.location
+	
+
+	if obj.is_performing():
+		print("loot_nearest_chest: is performing already. 0")
+		return 0
+
+	OPENING = 'opening'
+	OPENED = 'opened'
+	LOCKPICKING = 'lockpicking'
+	LOOTING = 'looting'
+	FINISHED = 'finished'
+
+	cur_state = slot.state
+	if cur_state is None:
+		#initialize state
+		slot.state = {'state' : OPENING}
+		if chest_obj.obj_get_int(obj_f_container_flags) & OCOF_LOCKED:
+			action_type = D20A_OPEN_LOCK
+			slot.state['state'] = LOCKPICKING
+			slot.state['t_start'] = slot.get_cur_time()
+	else:
+		if cur_state['state'] == OPENING:
+			slot.state['state'] = LOOTING
+			return 0
+		elif cur_state['state'] == LOOTING:
+			# print("Looting!")
+			click_loot_all_button()
+			slot.state['state'] = FINISHED
+			return 0
+		elif cur_state['state'] == FINISHED:
+			press_escape()
+			return 1
+		elif cur_state['state'] == LOCKPICKING:
+			# print("Lockpicking!")
+			e_time = slot.get_cur_time() - slot.state['t_start']
+			if e_time < 8: # give the animation time to complete (unfortunately this isn't acknowledged in is_performing... the action sequence ends immediately)
+				return 0
+			else:
+				if (chest_obj.obj_get_int(obj_f_container_flags) & OCOF_LOCKED) == 0: # chest has been unlocked
+					slot.state['state'] = OPENING
+				else:
+					print('oh damn, lockpicking failed')
+				
+			
+	
+	perform_action(action_type, obj, chest_obj, container_loc)
+	return 0
+
+def fight_room(slot):
+	# type: (GoalSlot)->int
+	cntrl = CritterController.get_instance(slot.obj)
+	if cntrl is None or not cntrl.__was_in_combat__:
+		return 0
+	cntrl.__was_in_combat__ = False # the combat controller takes precedence
+	return 1
+
+def wait_for_dlg(slot):
+	global cntrl_
+	if not cntrl_.__was_in_dialog__:
+		return 0
+	cntrl_.__was_in_dialog__ = False # the combat controller takes precedence
+	return 1
+
+def loot_critters(slot):
+	#type: (GoalSlot) -> int
+	obj = slot.obj
+	action_type = D20A_OPEN_CONTAINER
+	tgt_type	= OLC_NPC
+
+	if obj.is_performing():
+		print("loot_nearest_chest: is performing already. 0")
+		return 0
+
+	OPENING = 'opening'
+	OPENED = 'opened'
+	LOOTED = 'looted'
+	LOOTING = 'looting'
+	FINISHED = 'finished'
+	def is_lootable_corpse(x):
+		if x.is_unconscious() == 0:
+			return False
+		inven_count = x.obj_get_int(obj_f_critter_inventory_num)
+		for i in range(inven_count):
+			item = x.obj_get_idx_obj(obj_f_critter_inventory_list_idx, i)
+			if item == OBJ_HANDLE_NULL:
+				continue
+			item_flags = item.obj_get_int(obj_f_item_flags)
+			if (item_flags & OIF_NO_LOOT) == 0:
+				return True
+		return False
+	cur_state = slot.state
+	if cur_state is None:
+		objects = [x for x in game.obj_list_vicinity(obj.location, tgt_type) if is_lootable_corpse(x) ]
+		if len(objects) == 0:
+			return 1
+		#initialize state
+		slot.state = {'state' : OPENING}
+		slot.state['critters'] = objects
+		slot.state['idx'] = 0
+		return 0
+	else:
+		objects = slot.state['critters']
+		if cur_state['state'] == OPENING:
+			slot.state['state'] = LOOTING
+			pass
+		elif cur_state['state'] == LOOTING:
+			print("Looting!")
+			click_loot_all_button()
+			slot.state['state'] = LOOTED
+			return 0
+		elif cur_state['state'] == LOOTED:
+			press_escape()
+			idx = slot.state['idx'] + 1
+			slot.state['idx'] = idx
+			if idx >= len(objects):
+				slot.state['state'] = FINISHED
+			else:
+				slot.state['state'] = OPENING
+			return 0
+		elif cur_state['state'] == FINISHED:
+			return 1
+	idx = slot.state['idx']
+	loc = objects[idx].location
+	print("Loot critters: ", idx, loc, objects)
+	perform_action(action_type, obj, objects[idx], loc)
+	return 0
+
 
 def activate_scheme(slot):
 	# type: (GoalSlot) -> int

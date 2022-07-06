@@ -57,7 +57,7 @@ class GoalSlot:
     param1 = None #type: ...
     param2 = None #type: ...
     state = None #type: ...
-    def __init__(self, obj):
+    def __init__(self, obj = None):
         self.obj = obj
         self.param1 = 0
         self.param2 = 0
@@ -182,6 +182,7 @@ class ControllerBase:
     __goal_slot__ = None  #type: GoalSlot
     
     def __init__(self):
+        self.__goal_slot__ = GoalSlot()
         return
 
     def add_scheme(self, scheme, scheme_id):
@@ -208,7 +209,7 @@ class ControllerBase:
         return
 
     def execute(self):
-        print('Controller execute()')
+        # print('Controller execute()')
 
         scheme = self.__control_schemes__[self.__cur_control_scheme_id__] #type: ControlScheme
         self.execute_log(scheme)
