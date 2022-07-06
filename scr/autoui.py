@@ -34,6 +34,8 @@ class TWidget:
         self.is_button = wid.is_button
         if self.is_window:
             self.children_ids = wid.children
+        if self.is_button:
+            self.wid = tpgui._get_legacy_button(id)
         return True
 
     def __init_from_advanced_widget__(self, id):
@@ -91,7 +93,14 @@ class TWidget:
         if self.is_legacy_widget:
             return self.wid.y
         return self.wid.abs_y()
-                
+    @property
+    def is_button_enabled(self):
+        if not self.is_button:
+            return False
+        if self.is_legacy_widget:
+            return self.wid.button_state != tpgui.LgcyButtonState.Disabled
+        return not self.wid.is_disabled
+
     def __repr__(self):
         return "TWidget ({}, {})".format(self.id, self.full_name)
 
