@@ -99,27 +99,63 @@ class WID_IDEN:
     # see autoui.TWidgetIdentifier
     aui.TWidgetIdentifier
     NEW_GAME = [
-        ('', 'templeplus/ui/main_menu.json'), 0,    ('pages', 'templeplus/ui/main_menu.json'),   ('page-main-menu', 'templeplus/ui/main_menu.json'),    ('new-game', 'templeplus/ui/main_menu.json')
+        ('', 'templeplus/ui/main_menu.json'), 0,    ('pages', 'templeplus/ui/main_menu.json'),   
+        ('page-main-menu', 'templeplus/ui/main_menu.json'),    ('new-game', 'templeplus/ui/main_menu.json')
     ] 
     NORMAL_DIFF = [
        ('', 'templeplus/ui/main_menu.json'), 0,   ('pages', 'templeplus/ui/main_menu.json'),  ('page-difficulty', 'templeplus/ui/main_menu.json'),        ('difficulty-normal', 'templeplus/ui/main_menu.json')
     ]
-    CHAR_POOL_BEGIN_ADVENTURE = 2695
-    TRUE_NEUTRAL_BTN_WID_ID = 2717
-    PARTY_ALIGNMENT_ACCEPT_BTN = 2722
-    CHAR_POOL_CHAR1 = 3234
-    CHAR_POOL_CHAR2 = 3235
-    CHAR_POOL_CHAR3 = 3236
-    CHAR_POOL_CHAR4 = 3237
-    CHAR_POOL_CHAR5 = 3238
-    CHAR_POOL_CHAR6 = 3239
-    CHAR_POOL_ADD_BTN = 3242
+    CHAR_POOL_BEGIN_ADVENTURE = [('pc_creation.c 2024'),('pc_creation.c 2048')]
+    TRUE_NEUTRAL_BTN_WID_ID = [
+        ('pc_creation.c 1566'), ('pc_creation.c 1590'), 4 
+    ]
+    PARTY_ALIGNMENT_ACCEPT_BTN = [('pc_creation.c 1566'), ('pc_creation.c 1641'), ]
+    CHAR_POOL_CHAR1 = [('party_pool.c 1349'), ('party_pool.c 1383'), 0]
+    CHAR_POOL_CHAR2 = [('party_pool.c 1349'), ('party_pool.c 1383'), 1]
+    CHAR_POOL_CHAR3 = [('party_pool.c 1349'), ('party_pool.c 1383'), 2]
+    CHAR_POOL_CHAR4 = [('party_pool.c 1349'), ('party_pool.c 1383'), 3]
+    CHAR_POOL_CHAR5 = [('party_pool.c 1349'), ('party_pool.c 1383'), 4]
+    CHAR_POOL_CHAR6 = [('party_pool.c 1349'), ('party_pool.c 1383'), 5]
+    CHAR_POOL_ADD_BTN = [('party_pool.c 885'), ('party_pool.c 914')]
+
+    LOAD_GAME = [  ('', 'templeplus/ui/main_menu.json'), ('pages', 'templeplus/ui/main_menu.json'), 
+     ('page-main-menu', 'templeplus/ui/main_menu.json'),   ('load-game', 'templeplus/ui/main_menu.json')  
+    ]
+    LOAD_GAME_ENTRY_1 = [
+        ('loadgame_ui.c 327'), ('loadgame_ui.c 448'), 1
+    ]
+    LOAD_GAME_LOAD_BTN = [ ('loadgame_ui.c 327'), ('loadgame_ui.c 351'), ]
     
+
+def get_window_rect(name = "Temple of Elemental Evil (Temple+)"):
+    import ctypes
+    import ctypes.wintypes
+    # import ctypes; hwnd = ctypes.windll.user32.FindWindowW('TemplePlusMainWnd', "Temple of Elemental Evil (Temple+)")
+    import ctypes; hwnd = ctypes.windll.user32.FindWindowA('TemplePlusMainWnd', 0)
+    rect = ctypes.wintypes.RECT()
+    ctypes.windll.user32.GetWindowRect(hwnd, ctypes.pointer(rect))
+    return (rect.left, rect.top, rect.right, rect.bottom)
+
+def client_to_screen(x,y):
+    import ctypes; hwnd = ctypes.windll.user32.FindWindowA('TemplePlusMainWnd', 0)
+    import ctypes.wintypes
+    pt = ctypes.wintypes.POINT()
+    pt.x = x
+    pt.y = y
+    ctypes.windll.user32.ClientToScreen(hwnd, ctypes.pointer(pt))
+    
+    return pt.x, pt.y
 
 def move_mouse(x,y):
     ''' in screenspace only; useful for UIs (esp. radial menu) '''
     import ctypes; SetCursorPos = ctypes.windll.user32.SetCursorPos
-    SetCursorPos(x,y)
+    # l,t,r,b = get_window_rect()
+    import tpgui
+    x,y   = tpgui.map_from_scene(x,y) # takes care of scaled windows
+    xs,ys = client_to_screen(x,y)
+
+    # print("Moving Mouse to: xs, ys", xs,ys)
+    SetCursorPos(xs,ys)
     # mouse_event = ctypes.windll.user32.mouse_event
     return
 

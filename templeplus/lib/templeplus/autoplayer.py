@@ -7,13 +7,15 @@ autoplayer = None #type: Autoplayer
 def play_new_game():
     print('gonna play a new game')
     #controllers.UiController.start_ui_thread()
+    import new_game_controller
     global autoplayer
     autoplayer = playtester.Playtester()
+    new_game_controller.setup_playtester(autoplayer)
     return
 
 def excb(arg):
     print('cawback #' + str(arg))
-    UiTimeEvent.schedule( excb, (arg+1,), 1000 )
+    # UiTimeEvent.schedule( excb, (arg+1,), 1000 )
     return
 
 def advance_time(time_real):

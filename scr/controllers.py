@@ -437,12 +437,4 @@ def select_target(obj):
 
 
 
-def perform_action( action_type, actor, tgt, location ):
-    try:
-        result = actor.action_perform( action_type, tgt, location)
-    except RuntimeError as e:
-        print(e.message)
-        result = 0
-        pass
-    return result
 

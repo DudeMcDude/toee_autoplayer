@@ -1,3 +1,4 @@
+from templeplus.playtester import Playtester
 from toee import *
 from toee import game
 from controllers import GoalSlot
@@ -17,8 +18,29 @@ def get_party_idx(obj):
         i += 1
     return -1
 
+def get_object(obj_identifier):
+	if type(obj_identifier) is dict:
+		obj_list = game.obj_list_vicinity(game.leader.location, OLC_ALL)
+		if obj_identifier.get('proto'):
+			proto_id = obj_identifier['proto']
+			obj_list = [x for x in obj_list if x.proto == proto_id]
+		if len(obj_list) == 0:
+			return OBJ_HANDLE_NULL
+		return obj_list[0]
+	return OBJ_HANDLE_NULL
+
+
+def perform_action( action_type, actor, tgt, location ):
+    try:
+        result = actor.action_perform( action_type, tgt, location)
+    except RuntimeError as e:
+        print(e.message)
+        result = 0
+        pass
+    return result
 #endregion
 
+#region callbacks
 def gs_wait_cb(slot):
     # type: (GoalSlot)->int
 	return 1
@@ -132,6 +154,33 @@ def gs_arrive_at_tile(slot):
 			slot.state = None # this will retry the click and scroll
 	return 0
 
+
+def gs_leader_perform_on_target(slot):
+	obj = game.leader
+	if obj == OBJ_HANDLE_NULL:
+		return 0
+	action_type = slot.param1
+	target = get_object(slot.param2)
+	if target == OBJ_HANDLE_NULL:
+		return 0
+	target_loc = target.location
+
+	if obj.is_performing():
+		debug_print("leader_perform_on_target: is performing already. 0")
+		return 0
+
+	if slot.state is None:
+		debug_print("leader_perform_on_target: setting state to 0")
+		slot.state = 0
+	elif slot.state == 0: # will only complete this stage when is_performing() == 0 and have queued the action
+		debug_print("leader_perform_on_target: setting state to 1")
+		slot.state = 1
+		return 1
+	debug_print("leader_perform_on_target: performing action")
+	perf_result = perform_action(action_type, obj, target, target_loc)
+	# if perf_result == 0:
+		# return 0
+	return
 
 def perform_on_nearest(slot):
 	obj = slot.obj
@@ -296,10 +345,11 @@ def loot_critters(slot):
 
 def activate_scheme(slot):
 	# type: (GoalSlot) -> int
-	if cntrl_.set_active_scheme(slot.param1):
+	# print('activating scheme', slot.param1)
+	if Playtester.get_instance().set_active_scheme(slot.param1):
 		return 1
 	else:
-		print("coudn't actiavte scheme" + str(slot.param1))
+		# print("coudn't activate scheme " + str(slot.param1))
 		return 0
 
 def gs_idle(slot):
