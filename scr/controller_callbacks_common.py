@@ -20,7 +20,10 @@ def get_party_idx(obj):
 
 def get_object(obj_identifier):
 	if type(obj_identifier) is dict:
-		obj_list = game.obj_list_vicinity(game.leader.location, OLC_ALL)
+		loc = game.leader.location
+		if obj_identifier.get('location'):
+			loc = obj_identifier['location']
+		obj_list = game.obj_list_vicinity(loc, OLC_ALL)
 		if obj_identifier.get('proto'):
 			proto_id = obj_identifier['proto']
 			obj_list = [x for x in obj_list if x.proto == proto_id]
@@ -55,9 +58,23 @@ def gs_select_me(slot):
 
 
 def gs_select_all(slot):
-	press_key(DIK_GRAVE)
+	select_all()
 	return 1
 
+
+def gs_scroll_to_tile(slot):
+	loc = slot.param1
+	if type(loc) is tuple:
+		x,y = loc
+	else:
+		x,y = location_to_axis(loc)
+	scroll_to( x-10, y,  )
+	return 1
+
+def gs_center_on_tile(slot):
+	loc = slot.param1
+	center_screen_on( loc )
+	return 1
 
 def gs_click_and_scroll_to_tile(slot):
 	# type: (GoalSlot) -> int
@@ -164,6 +181,7 @@ def gs_leader_perform_on_target(slot):
 	if target == OBJ_HANDLE_NULL:
 		return 0
 	target_loc = target.location
+	print(str(target))
 
 	if obj.is_performing():
 		debug_print("leader_perform_on_target: is performing already. 0")
@@ -265,17 +283,17 @@ def loot_nearest_chest(slot):
 
 def fight_room(slot):
 	# type: (GoalSlot)->int
-	cntrl = CritterController.get_instance(slot.obj)
+	cntrl = Playtester.get_instance().get_instance()
 	if cntrl is None or not cntrl.__was_in_combat__:
 		return 0
 	cntrl.__was_in_combat__ = False # the combat controller takes precedence
 	return 1
 
 def wait_for_dlg(slot):
-	global cntrl_
-	if not cntrl_.__was_in_dialog__:
+	cntrl = Playtester.get_instance()
+	if not cntrl.__was_in_dialog__:
 		return 0
-	cntrl_.__was_in_dialog__ = False # the combat controller takes precedence
+	cntrl.__was_in_dialog__ = False # the combat controller takes precedence
 	return 1
 
 def loot_critters(slot):

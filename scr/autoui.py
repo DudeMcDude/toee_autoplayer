@@ -120,17 +120,17 @@ class TWidgetIdentifier:
         return len(self.name) > 0 and self.source_uri is not None and len(self.source_uri) > 0
     @property
     def has_parent_name(self):
-        return self.parent_name is not None and len(self.parent_name)
+        return (self.parent_name is not None) and (len(self.parent_name) > 0)
 
 def find_by_identifier(w_identifier, wid_ids = None, searching_in_parent = False):
     # type: (TWidgetIdentifier, list[int], bool)->list[TWidget]
     # debug_print('searching for widget: ' + str(w_identifier.name))
-
+    print(w_identifier, wid_ids)
     if type(w_identifier) is str:
         w_identifier = TWidgetIdentifier(w_identifier)
     elif type(w_identifier) is list or type(w_identifier) is tuple:
         w_identifier = TWidgetIdentifier(*w_identifier)
-
+    # print(w_identifier, wid_ids)
     if wid_ids is None:
         widgets = convert_widget_ids(get_active_windows())
     elif isinstance(wid_ids, TWidget):
@@ -140,14 +140,19 @@ def find_by_identifier(w_identifier, wid_ids = None, searching_in_parent = False
     if len(widgets) == 0:
         return []
     
+    if w_identifier is None:
+        return widgets
+
     def find_in_children():
         par_idx = w_identifier.child_idx
+        print('has parent name: ', w_identifier.has_parent_name)
         if not w_identifier.has_parent_name: # searching in root widget list
             if par_idx >= len(widgets):
                 return None
             return [widgets[par_idx],]
 
         par_name = w_identifier.parent_name
+        print('par_name:', par_name)
         for wid in widgets:
             if wid.name == par_name:
                 if par_idx >= len(wid.children_ids):
@@ -156,11 +161,13 @@ def find_by_identifier(w_identifier, wid_ids = None, searching_in_parent = False
         return []
 
     if w_identifier.has_name_and_uri:
+        # print('searching by name and uri')
         for wid in widgets:
             if wid.name == w_identifier.name and wid.source_uri == w_identifier.source_uri:
                 return [wid,]
     
     elif w_identifier.child_idx >= 0: # find by parent name and child index
+        # print('searching by child idx')
         return find_in_children()
         
     else: # search just by name

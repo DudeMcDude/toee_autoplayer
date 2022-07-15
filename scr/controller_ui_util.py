@@ -2,6 +2,7 @@ from toee import *
 from toee import game
 from utilities import *
 import autoui as aui
+import tpgui
 
 DIK_ESCAPE = 1
 DIK_1 = 2
@@ -37,6 +38,8 @@ def press_quickload():
 
 def select_party(idx):
     press_key(DIK_1 + idx)
+def select_all():
+    press_key(DIK_GRAVE)
 
 def click_loot_all_button():
     print("Loot all")
@@ -84,10 +87,11 @@ def obtain_widget(identifier_list, widget_ids = None):
             print('obtain_widget: needs index to disambiguate results!')
             return None
         elif len(find_res) == 1:
-            widget_ids = res.children_ids
-
+            widget_ids = res.children_ids # search among last widget's children
+        # print(wid_identifier)
         find_res = aui.find_by_identifier( wid_identifier, widget_ids )
         if len(find_res) == 0:
+            # print('not found')
             return None
         if len(find_res) == 1:
             res = find_res[0]
@@ -125,6 +129,8 @@ class WID_IDEN:
         ('loadgame_ui.c 327'), ('loadgame_ui.c 448'), 1
     ]
     LOAD_GAME_LOAD_BTN = [ ('loadgame_ui.c 327'), ('loadgame_ui.c 351'), ]
+    UTIL_BAR_CAMP_BTN = [ ('utility_bar_ui.c 481',), None, 4]
+    CAMPING_UI_REST_BTN = [ ('camping_ui.c 570',), None, 0]
     
 
 def get_window_rect(name = "Temple of Elemental Evil (Temple+)"):
@@ -137,6 +143,7 @@ def get_window_rect(name = "Temple of Elemental Evil (Temple+)"):
     return (rect.left, rect.top, rect.right, rect.bottom)
 
 def client_to_screen(x,y):
+    # convert coordinate from client space to screen space
     import ctypes; hwnd = ctypes.windll.user32.FindWindowA('TemplePlusMainWnd', 0)
     import ctypes.wintypes
     pt = ctypes.wintypes.POINT()
@@ -146,11 +153,18 @@ def client_to_screen(x,y):
     
     return pt.x, pt.y
 
+def get_mouse_pos():
+    import ctypes; GetCursorPos = ctypes.windll.user32.GetCursorPos
+    import ctypes.wintypes
+    pt = ctypes.wintypes.POINT()
+    GetCursorPos(ctypes.pointer(pt))
+
+    return pt.x, pt.y
+
 def move_mouse(x,y):
     ''' in screenspace only; useful for UIs (esp. radial menu) '''
     import ctypes; SetCursorPos = ctypes.windll.user32.SetCursorPos
     # l,t,r,b = get_window_rect()
-    import tpgui
     x,y   = tpgui.map_from_scene(x,y) # takes care of scaled windows
     xs,ys = client_to_screen(x,y)
 
@@ -159,9 +173,25 @@ def move_mouse(x,y):
     # mouse_event = ctypes.windll.user32.mouse_event
     return
 
+def move_mouse_to_loc(loc):
+    if type(loc) is tuple:
+        x,y = loc
+        loc = location_from_axis(x,y)
+        x,y = tpgui.world_to_screen(loc)
+    else:
+        x,y = tpgui.world_to_screen(loc)
+    move_mouse(x,y)
+    return
+
+def move_mouse_to_obj(obj):
+    # loc = obj.location
+    # game.mouse_move_to(loc)
+    x,y = tpgui.world_to_screen(obj.location_full)
+    move_mouse(x,y)
+    return
+
 def click_on_obj(obj):
-    loc = obj.location
-    game.mouse_move_to(loc)
+    move_mouse_to_obj(obj)
     game.mouse_click()
     return
 
@@ -181,7 +211,19 @@ def rightclick_at(x,y, screenspace = 0):
     game.mouse_click(1)
     return
 
-def scroll_to(x,y):
-    loc = location_from_axis(x,y)
+def center_screen_on(loc):
+    if type(loc) is tuple:
+        x,y = loc
+        loc = location_from_axis(x,y)
+    game.scroll_to(loc, 0) # non-smooth transition
+    return
+
+def scroll_to(loc, y = None):
+    if type(loc) is tuple:
+        x,y = loc
+        loc = location_from_axis(x,y)
+    elif y is not None:
+        x = loc
+        loc = location_from_axis(x,y)
     game.scroll_to(loc)
     return

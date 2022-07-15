@@ -2,6 +2,7 @@ from toee import game
 from utilities import location_to_axis, location_from_axis, obj_percent_hp
 import gamedialog as dlg
 from toee import *
+from collections import deque
 
 
 
@@ -30,52 +31,111 @@ class StateTrans:
         else:
             raise Exception("bad arg for state")
 
-class GoalState:
-    id = '' #type: str
+class GoalStateCb:
     cb = lambda slot: 1 #type: callable
-    after_success = StateTrans('',0) #type: StateTrans
-    after_failure = None #type: StateTrans
     params = None #type: dict
-    
-    def __init__(self, id, cb, after_s, after_f = None, params = None):
+    def __init__(self, cb, params = None, state = None):
         if params is None:
             params = {}
+        
+        self.cb = cb        
+        self.params = params
+        self.state = state
+        assert type(params) == dict, 'params must be dict'
 
+class GoalState(GoalStateCb):
+    id = '' #type: str
+    after_success = StateTrans('',0) #type: StateTrans
+    after_failure = None #type: StateTrans
+    
+    def __init__(self, id, cb, after_s, after_f = None, params = None, state = None):
+        GoalStateCb.__init__(self, cb, params, state)
+        
         self.id = id
-        self.cb = cb
         
         self.after_success = StateTrans.convert_state(after_s)
         self.after_failure = StateTrans.convert_state(after_f)
-        self.params = params
-        assert type(params) == dict, 'params must be dict'
         return
     def __repr__(self):
         return 'GoalState( id= "' + str(self.id) + '", after_success= ' + str(self.after_success) + ' )'
+
+    @staticmethod
+    def from_sequence(base_id, s, after_s, after_f = None):
+        #type: (str, list[GoalState], StateTrans, StateTrans)->list[GoalState]
+        N = len(s)
+        if N == 0:
+            raise ValueError("empty s")
+        result = []
+        idx = 0
+        # print('appending GoalStates: ')
+        for state in s:
+            if idx == 0: # first 
+                state.id = base_id
+                state.after_success.new_state = base_id + "_{:d}".format(idx+1)
+                state.after_failure = None
+            elif idx < N-1:
+                state.id = base_id + "_{:d}".format(idx)
+                state.after_success.new_state = base_id + "_{:d}".format(idx+1)
+                state.after_failure = None
+            else: # idx == N-1
+                state.id = base_id + "_{:d}".format(idx)
+                state.after_success = StateTrans.convert_state(after_s)
+                state.after_failure = StateTrans.convert_state(after_f)
+                
+            idx += 1
+            print(state.id, state.after_success.new_state)
+            result.append(state)
+        return result
+
+class GoalStackEntry:
+    scheme_id = None #type: str
+    
+    # for saving state when pushing other goals
+    state_save = None #type: dict 
+    stage_id = None
+
+    def __init__(self, scheme_id, stage_id, state = None):
+        #type: (str, str, dict)->None
+        self.scheme_id = scheme_id
+        self.stage_id = stage_id
+        self.state_save = state
+        return
+    
 
 class GoalSlot:
     obj = None
     param1 = None #type: ...
     param2 = None #type: ...
     state = None #type: ...
+    goal_stack = None #type: deque[GoalStackEntry]
     def __init__(self, obj = None):
         self.obj = obj
         self.param1 = 0
         self.param2 = 0
         self.state = None
+        self.goal_stack = []
         return
-    def reset_by_goal_state(self, stage):
-        # type: (GoalState) -> None
+    def init_state(self, state):
+        #type: (dict)->None
+        if self.state is None:
+            self.state = state
+            return 1
+        return 0
+    def reset_by_goal_state(self, stage, state = None):
+        # type: (GoalStateCb, dict) -> None
         self.state = None
         p1 = stage.params.get('param1')
         p2 = stage.params.get('param2')
         self.param1 = p1
         self.param2 = p2
+        if state is not None:
+            self.state = dict(state) # copy state dict
         return
     def get_cur_time(self):
         return game.time.time_game_in_seconds(game.time)
 
 class ControlScheme:
-    __stages__ = {} #type: dict
+    __stages__ = {} #type: dict[str,GoalState]
     __cur_stage_id__ = 'start'
     def __init__(self, s = None):
         if s is not None:
@@ -103,6 +163,10 @@ class ControlScheme:
     def __repr__(self):
         return 'ControlScheme( __cur_stage_id__: "' + str(self.__cur_stage_id__) + '"'+' )' #+ ' stages: ' + str(self.__stages__)
         
+    def get_cur_stage_id(self):
+        #type: ()->str
+        return self.__cur_stage_id__
+    
     def get_cur_stage(self):
         # type: ()->GoalState
         stage = self.__stages__[self.__cur_stage_id__]
@@ -117,8 +181,13 @@ class ControlScheme:
         result = stage.cb(slot)
         # if not result:
         #     print('callback result: ' + str(result))
+        return result
+        
+    def advance_stage(self, slot, succeeded):
+        stage = self.get_cur_stage()
+        result = succeeded
 
-        next_stage = stage.after_success #type: StateTrans
+        next_stage = stage.after_success
         if result == 0:
             if stage.after_failure is not None:
                 next_stage = stage.after_failure
@@ -127,15 +196,14 @@ class ControlScheme:
         # print('next stage: ' + str(next_stage))
 
         new_id = next_stage.new_state
-        new_stage = self.__stages__.get(new_id) # type: GoalState
+        new_stage = self.__stages__.get(new_id)
         if new_stage is None:
             raise KeyError("No such stage: " + str(new_id))
         if new_id != self.__cur_stage_id__: # if entering new stage, reset GoalSlot's state
-            slot.reset_by_goal_state(new_stage)
+            slot.reset_by_goal_state(new_stage, new_stage.state)
         self.__cur_stage_id__ = new_id
 
         return next_stage.delay
-
 
 class UiController:
     def __init__(self):
@@ -174,7 +242,7 @@ class UiController:
     
 
 class ControllerBase:
-    __control_schemes__ = {} #type: dict #[str, ControlScheme]
+    __control_schemes__ = {} #type: dict[str, ControlScheme]
     __cur_control_scheme_id__ = ''
 
     __logging__ = False
@@ -191,12 +259,31 @@ class ControllerBase:
         return
 
     def set_active_scheme(self, scheme_id):
+        #type: (str)-> bool
         if self.__control_schemes__.get(scheme_id) is None:
             return False
         
         self.__cur_control_scheme_id__ = scheme_id
         scheme = self.__control_schemes__[scheme_id] # type: ControlScheme
-        self.__goal_slot__.reset_by_goal_state(scheme.get_cur_stage())
+        slot   = self.__goal_slot__
+        slot.reset_by_goal_state(scheme.get_cur_stage())
+        return True
+    
+    def push_scheme(self, scheme_id):
+        #type: (str)-> bool
+        if not scheme_id in self.__control_schemes__:
+            return False
+        prev_scheme_id = self.__cur_control_scheme_id__
+
+        scheme = self.__control_schemes__[scheme_id]
+        slot = self.__goal_slot__
+        
+        # slot.push(scheme_id)
+        new_entry = GoalStackEntry(scheme_id, scheme.get_cur_stage_id() , slot.state)
+
+        slot.goal_stack.appendleft( new_entry )
+
+        self.set_active_scheme(scheme_id)
         return True
 
     def schedule(self, delay_msec = 200, real_time = 1):
@@ -212,9 +299,25 @@ class ControllerBase:
         # print('Controller execute()')
 
         scheme = self.__control_schemes__[self.__cur_control_scheme_id__] #type: ControlScheme
+        slot = self.__goal_slot__
         self.execute_log(scheme)
+        
+        result = scheme.execute(slot)
+        self.advance(result)
+        return
 
-        delay = scheme.execute(self.__goal_slot__)
+
+    def advance(self, result):
+        # callback can:
+        # push scheme
+        # end scheme
+        scheme_post = self.__control_schemes__[self.__cur_control_scheme_id__]
+
+        if scheme_post != scheme:
+            # need to set stage back to 'start'
+            pass
+        
+        delay  = scheme.advance_stage(slot, result)
         if delay:
             self.schedule(delay)
         else: # immediately execute
