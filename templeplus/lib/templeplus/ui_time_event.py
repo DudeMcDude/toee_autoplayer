@@ -23,7 +23,7 @@ class UiTimeEvent:
     
     @staticmethod
     def schedule(cb, args, delay_ms):
-        t_stamp = game.time_played
+        t_stamp = game.time_session
         t_stamp.add_ms( delay_ms )
         new_evt = UiTimeEvent(t_stamp, cb, args)
         if UiTimeEvent.__is_advance_time__ == False:
@@ -34,7 +34,7 @@ class UiTimeEvent:
     
     @staticmethod
     def expire_events():
-        time_real = game.time_played
+        time_real = game.time_session
         last_idx = None
         # need to copy ui_time_events in case the callback changes them...
         for idx, evt in enumerate(UiTimeEvent.ui_time_events):
@@ -56,7 +56,7 @@ class UiTimeEvent:
         return self.__t_expire__.delta_ms(t_stamp)
     
     def cb(self):
-        # print("I have expired! me = " + str(self) ) + " cur time: " + str(game.time_played)
+        # print("I have expired! me = " + str(self) ) + " cur time: " + str(game.time_session)
         self.__callback__(*self.__args__)
         return
     def __repr__(self):

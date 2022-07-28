@@ -29,11 +29,12 @@ class StateTrans:
         elif s is None:
             return s
         else:
-            raise Exception("bad arg for state")
+            raise Exception("bad arg for state",s)
 
 class GoalStateCb:
     cb = lambda slot: 1 #type: callable
     params = None #type: dict
+    state = None #type: dict
     def __init__(self, cb, params = None, state = None):
         if params is None:
             params = {}
@@ -83,7 +84,7 @@ class GoalState(GoalStateCb):
                 state.after_failure = StateTrans.convert_state(after_f)
                 
             idx += 1
-            print(state.id, state.after_success.new_state)
+            # print(state.id, state.after_success.new_state)
             result.append(state)
         return result
 
@@ -100,20 +101,25 @@ class GoalStackEntry:
         self.stage_id = stage_id
         self.state_save = state
         return
+    def __repr__(self):
+        return "Scheme ID: " + str(self.scheme_id) + " Stage ID: " + str(self.stage_id) + " Saved state:" + str(self.state_save)
     
 
 class GoalSlot:
     obj = None
     param1 = None #type: ...
     param2 = None #type: ...
-    state = None #type: ...
+    state = None #type: dict
+    state_prev = None #type: dict
     goal_stack = None #type: deque[GoalStackEntry]
+    __dialog_state__ = None #type: dict
+
     def __init__(self, obj = None):
         self.obj = obj
         self.param1 = 0
         self.param2 = 0
         self.state = None
-        self.goal_stack = []
+        self.goal_stack = deque()
         return
     def init_state(self, state):
         #type: (dict)->None
@@ -123,6 +129,8 @@ class GoalSlot:
         return 0
     def reset_by_goal_state(self, stage, state = None):
         # type: (GoalStateCb, dict) -> None
+        if self.state is not None:
+            self.state_prev = dict(self.state) # copy last state
         self.state = None
         p1 = stage.params.get('param1')
         p2 = stage.params.get('param2')
@@ -131,12 +139,17 @@ class GoalSlot:
         if state is not None:
             self.state = dict(state) # copy state dict
         return
+    
     def get_cur_time(self):
         return game.time.time_game_in_seconds(game.time)
 
 class ControlScheme:
     __stages__ = {} #type: dict[str,GoalState]
-    __cur_stage_id__ = 'start'
+    START_STAGE_ID = 'start'
+    END_STAGE_ID = 'end'
+    __cur_stage_id__ = START_STAGE_ID
+    is_endless = False
+    
     def __init__(self, s = None):
         if s is not None:
             self.__set_stages__(s)
@@ -163,6 +176,11 @@ class ControlScheme:
     def __repr__(self):
         return 'ControlScheme( __cur_stage_id__: "' + str(self.__cur_stage_id__) + '"'+' )' #+ ' stages: ' + str(self.__stages__)
         
+    def is_ended(self):
+        if self.is_endless:
+            return False
+        return self.__cur_stage_id__ == ControlScheme.END_STAGE_ID
+
     def get_cur_stage_id(self):
         #type: ()->str
         return self.__cur_stage_id__
@@ -184,6 +202,7 @@ class ControlScheme:
         return result
         
     def advance_stage(self, slot, succeeded):
+        #type: (GoalSlot, int)->int
         stage = self.get_cur_stage()
         result = succeeded
 
@@ -200,11 +219,16 @@ class ControlScheme:
         if new_stage is None:
             raise KeyError("No such stage: " + str(new_id))
         if new_id != self.__cur_stage_id__: # if entering new stage, reset GoalSlot's state
+            print('advancing stage: ' + new_id)
             slot.reset_by_goal_state(new_stage, new_stage.state)
         self.__cur_stage_id__ = new_id
 
         return next_stage.delay
 
+    def reset(self):
+        self.__cur_stage_id__ = ControlScheme.START_STAGE_ID
+        return
+    
 class UiController:
     def __init__(self):
         pass
@@ -248,6 +272,9 @@ class ControllerBase:
     __logging__ = False
 
     __goal_slot__ = None  #type: GoalSlot
+    __dialog_handler__ = lambda slot: 1
+    __dialog_handler_en__ = True
+    
     
     def __init__(self):
         self.__goal_slot__ = GoalSlot()
@@ -255,27 +282,35 @@ class ControllerBase:
 
     def add_scheme(self, scheme, scheme_id):
         # type: (ControlScheme, int)->None
+        assert isinstance(scheme, ControlScheme) == True, "bad scheme type!"
         self.__control_schemes__[scheme_id] = scheme
         return
 
-    def set_active_scheme(self, scheme_id):
-        #type: (str)-> bool
+    def set_active_scheme(self, scheme_id, state = None):
+        #type: (str, dict)-> bool
         if self.__control_schemes__.get(scheme_id) is None:
             return False
         
         self.__cur_control_scheme_id__ = scheme_id
         scheme = self.__control_schemes__[scheme_id] # type: ControlScheme
         slot   = self.__goal_slot__
-        slot.reset_by_goal_state(scheme.get_cur_stage())
+        slot.reset_by_goal_state(scheme.get_cur_stage(), state)
         return True
     
+    def set_dialog_handler(self, cb):
+        self.dialog_handler = cb
+        return
+    def dialog_handler_en(self, value):
+        self.__dialog_handler_en__ = value
+
+
     def push_scheme(self, scheme_id):
         #type: (str)-> bool
         if not scheme_id in self.__control_schemes__:
             return False
-        prev_scheme_id = self.__cur_control_scheme_id__
-
+        
         scheme = self.__control_schemes__[scheme_id]
+        scheme.reset()
         slot = self.__goal_slot__
         
         # slot.push(scheme_id)
@@ -285,6 +320,17 @@ class ControllerBase:
 
         self.set_active_scheme(scheme_id)
         return True
+
+    def pop_scheme(self):
+        slot = self.__goal_slot__
+        entry = slot.goal_stack.popleft()
+        state = entry.state_save
+
+        if len(slot.goal_stack) > 0:
+            prev_entry = slot.goal_stack[0]
+            print('pop_scheme: going back to ' + str(prev_entry.scheme_id))
+            self.set_active_scheme(prev_entry.scheme_id, entry.state_save)
+        return
 
     def schedule(self, delay_msec = 200, real_time = 1):
         game.timevent_add( self.execute, (), delay_msec, real_time)
@@ -296,26 +342,44 @@ class ControllerBase:
         return
 
     def execute(self):
-        # print('Controller execute()')
-
-        scheme = self.__control_schemes__[self.__cur_control_scheme_id__] #type: ControlScheme
+        scheme = self.get_cur_scheme() #type: ControlScheme
         slot = self.__goal_slot__
         self.execute_log(scheme)
         
+        if dlg.is_engaged() and self.__dialog_handler_en__:
+            result = self.dialog_handler(slot)
+            delay = 750
+            if result > 100:
+                delay = result
+            self.schedule(delay)
+            return
+        else:
+            slot.__dialog_state__ = None
+
         result = scheme.execute(slot)
+        if self.get_cur_scheme() != scheme:
+            self.schedule(100)
+            return
+
         self.advance(result)
         return
 
-
+    def get_cur_scheme(self):
+        if self.__cur_control_scheme_id__ in self.__control_schemes__:
+            scheme = self.__control_schemes__[self.__cur_control_scheme_id__] #type: ControlScheme
+            return scheme
+        return None
+        
     def advance(self, result):
         # callback can:
         # push scheme
         # end scheme
-        scheme_post = self.__control_schemes__[self.__cur_control_scheme_id__]
-
-        if scheme_post != scheme:
-            # need to set stage back to 'start'
-            pass
+        scheme = self.__control_schemes__[self.__cur_control_scheme_id__]
+        slot = self.__goal_slot__
+        if scheme.is_ended():
+            self.pop_scheme()
+            self.execute()
+            return
         
         delay  = scheme.advance_stage(slot, result)
         if delay:

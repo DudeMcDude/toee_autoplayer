@@ -117,7 +117,7 @@ class TWidgetIdentifier:
         return
     @property
     def has_name_and_uri(self):
-        return len(self.name) > 0 and self.source_uri is not None and len(self.source_uri) > 0
+        return len(self.name) > 0 and (self.source_uri is not None) and len(self.source_uri) > 0
     @property
     def has_parent_name(self):
         return (self.parent_name is not None) and (len(self.parent_name) > 0)
@@ -125,12 +125,13 @@ class TWidgetIdentifier:
 def find_by_identifier(w_identifier, wid_ids = None, searching_in_parent = False):
     # type: (TWidgetIdentifier, list[int], bool)->list[TWidget]
     # debug_print('searching for widget: ' + str(w_identifier.name))
-    print(w_identifier, wid_ids)
+    # print(w_identifier, wid_ids)
     if type(w_identifier) is str:
         w_identifier = TWidgetIdentifier(w_identifier)
     elif type(w_identifier) is list or type(w_identifier) is tuple:
+        # print('tuple identifier')
         w_identifier = TWidgetIdentifier(*w_identifier)
-    # print(w_identifier, wid_ids)
+    # print(w_identifier.source_uri, wid_ids)
     if wid_ids is None:
         widgets = convert_widget_ids(get_active_windows())
     elif isinstance(wid_ids, TWidget):
@@ -161,7 +162,6 @@ def find_by_identifier(w_identifier, wid_ids = None, searching_in_parent = False
         return []
 
     if w_identifier.has_name_and_uri:
-        # print('searching by name and uri')
         for wid in widgets:
             if wid.name == w_identifier.name and wid.source_uri == w_identifier.source_uri:
                 return [wid,]
@@ -170,8 +170,12 @@ def find_by_identifier(w_identifier, wid_ids = None, searching_in_parent = False
         # print('searching by child idx')
         return find_in_children()
         
-    else: # search just by name
+    elif w_identifier.name != '': # search just by name
         the_list = [wid for wid in widgets if wid.name == w_identifier.name]
+        if len(the_list) >= 1:
+            return the_list
+    elif w_identifier.source_uri is not None:
+        the_list = [wid for wid in widgets if wid.source_uri == w_identifier.source_uri]
         if len(the_list) >= 1:
             return the_list
     
