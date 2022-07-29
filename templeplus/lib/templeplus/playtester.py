@@ -1,7 +1,6 @@
 # import controllers
 from controllers import ControllerBase, GoalSlot
-print("tatakae")
-print("tatakae")
+
 # import autoui
 from ui_time_event import UiTimeEvent
 

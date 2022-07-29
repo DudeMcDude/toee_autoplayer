@@ -65,6 +65,7 @@ def move_mouse_to_widget(wid):
 
 
 def obtain_widget(identifier_list, widget_ids = None):
+    #type: ( list[aui.TWidgetIdentifier] | int | aui.TWidget , list[int] )-> aui.TWidget
     import autoui as aui
     widget_ids = None
     find_res = []
@@ -84,7 +85,7 @@ def obtain_widget(identifier_list, widget_ids = None):
             res = find_res[wid_identifier]
             continue
         elif len(find_res) > 1:
-            print('obtain_widget: needs index to disambiguate results!')
+            print('obtain_widget: needs index to disambiguate results! ', str(find_res))
             return None
         elif len(find_res) == 1:
             widget_ids = res.children_ids # search among last widget's children
@@ -114,19 +115,25 @@ class WID_IDEN:
         ('pc_creation.c 1566'), ('pc_creation.c 1590'), 4 
     ]
     PARTY_ALIGNMENT_ACCEPT_BTN = [('pc_creation.c 1566'), ('pc_creation.c 1641'), ]
-    CHAR_POOL_CHAR1 = [('party_pool.c 1349'), ('party_pool.c 1383'), 0]
-    CHAR_POOL_CHAR2 = [('party_pool.c 1349'), ('party_pool.c 1383'), 1]
-    CHAR_POOL_CHAR3 = [('party_pool.c 1349'), ('party_pool.c 1383'), 2]
-    CHAR_POOL_CHAR4 = [('party_pool.c 1349'), ('party_pool.c 1383'), 3]
-    CHAR_POOL_CHAR5 = [('party_pool.c 1349'), ('party_pool.c 1383'), 4]
-    CHAR_POOL_CHAR6 = [('party_pool.c 1349'), ('party_pool.c 1383'), 5]
+    CHAR_POOL_CHARS = [ 
+        [('party_pool.c 1349'), ('party_pool.c 1383'), x] for x in range(8) ]
+    
     CHAR_POOL_ADD_BTN = [('party_pool.c 885'), ('party_pool.c 914')]
 
-    LOAD_GAME = [  ('', 'templeplus/ui/main_menu.json'), ('pages', 'templeplus/ui/main_menu.json'), 
+    MAIN_MENU_LOAD_GAME = [  ('', 'templeplus/ui/main_menu.json'), ('pages', 'templeplus/ui/main_menu.json'), 
      ('page-main-menu', 'templeplus/ui/main_menu.json'),   ('load-game', 'templeplus/ui/main_menu.json')  
+    ]
+    INGAME_LOAD_GAME = [  ('', 'templeplus/ui/main_menu.json'), ('pages', 'templeplus/ui/main_menu.json'), 
+     ('page-ingame-normal', 'templeplus/ui/main_menu.json'),   ('ingame-normal-load', 'templeplus/ui/main_menu.json')  
     ]
     LOAD_GAME_ENTRY_1 = [
         ('loadgame_ui.c 327'), ('loadgame_ui.c 448'), 1
+    ]
+    LOAD_GAME_ENTRY_2 = [
+        ('loadgame_ui.c 327'), ('loadgame_ui.c 448'), 2
+    ]
+    LOAD_GAME_ENTRY_3 = [
+        ('loadgame_ui.c 327'), ('loadgame_ui.c 448'), 3
     ]
     LOAD_GAME_LOAD_BTN = [ ('loadgame_ui.c 327'), ('loadgame_ui.c 351'), ]
     UTIL_BAR_CAMP_BTN = [ ('utility_bar_ui.c 481',), None, 4]

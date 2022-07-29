@@ -4,6 +4,7 @@ class DialogState:
     action_type = 0
     line_number = 0
     reply_count = 0
+    script_id = 0
 
     def get_reply_effect(self, idx):
         return str('abcd=1')

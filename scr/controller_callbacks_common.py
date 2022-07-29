@@ -57,6 +57,11 @@ def gs_select_me(slot):
 	return 0
 
 
+def gs_press_key(slot):
+	dik = slot.param1
+	press_key(dik)
+	return 1
+
 def gs_select_all(slot):
 	select_all()
 	return 1
@@ -361,14 +366,48 @@ def loot_critters(slot):
 	return 0
 
 
-def activate_scheme(slot):
+def gs_create_and_push_scheme(slot):
+	#type: (GoalSlot)->int
+	'''param1 - id [str]\n
+		param2 - (callback, (args,...) )
+	'''
+	create_cb, args = slot.param2
+	id        = slot.param1
+	print('gs_create_and_push_scheme: ', id, 'args:' , args)
+	cs = create_cb(*args)
+	if slot.state is None:
+		slot.state = {}
+		
+		Playtester.get_instance().add_scheme(cs, id)
+		if Playtester.get_instance().push_scheme(id):
+			return 1
+		# print("coudn't activate scheme " + str(slot.param1))
+		return 1
+	return 1
+
+def gs_push_scheme(slot):
 	# type: (GoalSlot) -> int
+	'''
+	param1 - scheme id [str] \n
+	param2 - callback [callable]
+	'''
 	# print('activating scheme', slot.param1)
-	if Playtester.get_instance().set_active_scheme(slot.param1):
+	# if Playtester.get_instance().set_active_scheme(slot.param1):
+	cb = slot.param2
+	if cb:
+		if cb(slot):
+			if Playtester.get_instance().push_scheme(slot.param1):
+				return 1
+			return 0 # probably for trying again
 		return 1
 	else:
+		if slot.state is None:
+			slot.state = {}
+			if Playtester.get_instance().push_scheme(slot.param1):
+				return 1
 		# print("coudn't activate scheme " + str(slot.param1))
-		return 0
+		return 1
+	
 
 def gs_idle(slot):
 	return 0
