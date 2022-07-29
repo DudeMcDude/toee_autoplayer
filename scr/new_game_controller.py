@@ -1,6 +1,6 @@
 from controller_ui_util import WID_IDEN
 from toee import *
-from controllers import ControlScheme, GoalState
+from controllers import ControlScheme, GoalState, ControllerBase
 from controller_callbacks_common import *
 from utilities import *
 import autoui as aui
@@ -209,6 +209,7 @@ def dialog_handler(slot):
 
 def setup_playtester(autoplayer):
 	#type: (Playtester)->None
+	autoplayer = autoplayer #type: ControllerBase
 	autoplayer.__logging__ = False
 	autoplayer.console = ControllerConsole()
 	autoplayer.add_scheme( create_new_game_scheme(), 'new_game' )
@@ -221,8 +222,7 @@ def setup_playtester(autoplayer):
 	autoplayer.add_scheme( create_master_scheme(), 'main' )
 
 	autoplayer.set_dialog_handler(dialog_handler)
-
-	# autoplayer.set_active_scheme('new_game')
+	
 	autoplayer.push_scheme('main')
 	print('Beginning scheme in 1 sec...')
 	autoplayer.schedule(1000, real_time=1)

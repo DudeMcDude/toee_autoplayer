@@ -392,7 +392,6 @@ def gs_push_scheme(slot):
 	param2 - callback [callable]
 	'''
 	# print('activating scheme', slot.param1)
-	# if Playtester.get_instance().set_active_scheme(slot.param1):
 	cb = slot.param2
 	if cb:
 		if cb(slot):

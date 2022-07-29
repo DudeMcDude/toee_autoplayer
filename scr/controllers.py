@@ -306,7 +306,7 @@ class ControllerBase:
     __logging__ = False
 
     __goal_slot__ = None  #type: GoalSlot
-    __cur_scheme_instance__ = None
+    __cur_scheme_instance__ = None #type: GoalStackEntry
 
     __dialog_handler__ = lambda slot: 1
     __dialog_handler_en__ = True
@@ -324,16 +324,11 @@ class ControllerBase:
 
     def set_active_scheme(self, scheme_id, state = None):
         #type: (str, dict)-> bool
-        if self.__control_schemes__.get(scheme_id) is None:
-            return False
         
         self.__cur_control_scheme_id__ = scheme_id
-        scheme = self.__control_schemes__[scheme_id] # type: ControlScheme
         slot   = self.__goal_slot__
-
-        scheme_instance = GoalStackEntry(scheme_id, scheme, 'start')
-        self.__cur_scheme_instance__ = scheme_instance
-        slot.reset_by_goal_state(scheme_instance.get_cur_stage(), state)
+        scheme_inst = self.get_cur_scheme_instance()
+        slot.reset_by_goal_state(scheme_inst.get_cur_stage(), state)
 
         return True
     
@@ -356,22 +351,26 @@ class ControllerBase:
         slot = self.__goal_slot__
         
         # slot.push(scheme_id)
-        new_entry = GoalStackEntry(scheme_id, scheme,  slot.state)
+        new_entry = GoalStackEntry(scheme_id, scheme, ControlScheme.START_STAGE_ID, slot.state)
 
         slot.goal_stack.appendleft( new_entry )
-
+        self.__cur_scheme_instance__ = new_entry
         self.set_active_scheme(scheme_id)
         return True
 
     def pop_scheme(self):
         slot = self.__goal_slot__
-        entry = slot.goal_stack.popleft()
-        state = entry.state_save
+        entry_popped = slot.goal_stack.popleft()
+        
+        state = entry_popped.state_save
 
         if len(slot.goal_stack) > 0:
             prev_entry = slot.goal_stack[0]
             print('pop_scheme: going back to ' + str(prev_entry.scheme_id))
-            self.set_active_scheme(prev_entry.scheme_id, entry.state_save)
+            self.__cur_scheme_instance__ = prev_entry
+            self.set_active_scheme(prev_entry.scheme_id, entry_popped.state_save)
+        else:
+            self.__cur_scheme_instance__ = None
         return
 
     def schedule(self, delay_msec = 200, real_time = 1):
