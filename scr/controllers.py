@@ -73,18 +73,22 @@ class GoalState(GoalStateCb):
             if idx == 0: # first 
                 state.id = base_id
                 state.after_success.new_state = base_id + "_{:d}".format(idx+1)
-                state.after_failure = None
+                if StateTrans.convert_state(state.after_failure) is None:
+                    state.after_failure = StateTrans('', 300)
+                state.after_failure.new_state = base_id
             elif idx < N-1:
                 state.id = base_id + "_{:d}".format(idx)
                 state.after_success.new_state = base_id + "_{:d}".format(idx+1)
-                state.after_failure = None
+                if StateTrans.convert_state(state.after_failure) is None:
+                    state.after_failure = StateTrans('', 300)
+                state.after_failure.new_state = base_id + "_{:d}".format(idx)
             else: # idx == N-1
                 state.id = base_id + "_{:d}".format(idx)
                 state.after_success = StateTrans.convert_state(after_s)
                 state.after_failure = StateTrans.convert_state(after_f)
                 
             idx += 1
-            # print(state.id, state.after_success.new_state)
+            print(state.id, state.after_success)
             result.append(state)
         return result
 
@@ -125,7 +129,7 @@ class GoalStackEntry:
 
     def get_scheme(self):
         #type: ()->ControlScheme
-        return
+        return self.scheme
 
     def execute(self, slot):
         #type: (GoalSlot)->int
@@ -211,6 +215,9 @@ class GoalSlot:
     
     def get_cur_time(self):
         return game.time.time_game_in_seconds(game.time)
+    def get_scheme_state(self):
+        scheme_inst = self.goal_stack[0]
+        return scheme_inst.scheme_state
 
 class ControlScheme:
     __stages__ = {} #type: dict[str,GoalState]

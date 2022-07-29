@@ -373,9 +373,10 @@ def gs_create_and_push_scheme(slot):
 	'''
 	create_cb, args = slot.param2
 	id        = slot.param1
-	print('gs_create_and_push_scheme: ', id, 'args:' , args)
-	cs = create_cb(*args)
+	
 	if slot.state is None:
+		print('gs_create_and_push_scheme: ', id, 'args:' , args)
+		cs = create_cb(*args)
 		slot.state = {}
 		
 		Playtester.get_instance().add_scheme(cs, id)

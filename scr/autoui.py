@@ -15,7 +15,7 @@ class TWidget:
     is_legacy_widget = False
     is_window = False
     is_button = False
-    wid = None
+    wid = None #type: LgcyWidget | WidgetBase
     children_ids = None
     id = -1
     name = ""
@@ -100,6 +100,13 @@ class TWidget:
         if self.is_legacy_widget:
             return self.wid.button_state != tpgui.LgcyButtonState.Disabled
         return not self.wid.is_disabled
+
+    @property
+    def rendered_text(self):
+        if not self.is_legacy_widget:
+            return ""
+        return self.wid.rendered_text
+        
 
     def __repr__(self):
         return "TWidget ({}, {})".format(self.id, self.full_name)

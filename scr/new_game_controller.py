@@ -131,7 +131,7 @@ class DialogHandler:
 		cur_idx = state['reply_counter']
 		if cur_idx >= len(replies):
 			print("Reply script shorter than actual dialog! currently at ", cur_idx)
-			if dlg_reply_nonattack():
+			if dlg_reply_nonattack(ds):
 				return 1
 			dlg_reply(0)
 			return 1
@@ -210,7 +210,7 @@ def dialog_handler(slot):
 def setup_playtester(autoplayer):
 	#type: (Playtester)->None
 	autoplayer = autoplayer #type: ControllerBase
-	autoplayer.__logging__ = False
+	autoplayer.__logging__ = True
 	autoplayer.console = ControllerConsole()
 	autoplayer.add_scheme( create_new_game_scheme(), 'new_game' )
 	autoplayer.add_scheme( create_load_game_scheme(), 'load_game' )
@@ -242,32 +242,50 @@ def gs_scan_get_widget_from_list(slot):
 	''' 
 	param1 - widget identifier list\n
 	param2 - condition callback. signature: cb(slot)->bool\n
-	state {'idx': int, 'found': bool}
+	scheme_state { 'widget_scan': 
+					{ 'idx': int, 
+					  'found': bool, 
+					  'wid_id': TWidgetIdentifier} 
+				    }
 	'''
 	wid_list = slot.param1
 	condition = slot.param2
-	state = slot.state
-	if state is None:
-		slot.state = {
+	state = slot.get_scheme_state()
+	
+	state['widget_scan'] = {
 			'idx': -1,
 			'found': False,
 			'wid_id': None
 		}
-		state = slot.state
 	# todo: scrolling
 
 	for idx in range(len(wid_list)):
-		slot.state['idx'] = idx
-		wid = controller_ui_util.obtain_widget(wid_list[idx])
+		state['widget_scan']['idx'] = idx
+		# print('scan_get_widget: idx %d' % idx)
+		try:
+			# print('trying to obtain widget: %s' % str(wid_list[idx]))
+			wid = controller_ui_util.obtain_widget(wid_list[idx])
+		except Exception as e:
+			wid = None
+			# print('Failed!')
+			print(str(e))
+			# print(str(e.__traceback__))
+
 		if wid is None:
+			# print('Wid is None!')
 			continue
+		# print('obtained: %s, now checking condition' % str(wid))
 		if callable(condition):
-			condition = condition(slot)
-			if condition:
-				slot.state['found'] = True
-				slot.state['wid_id'] = wid_list[idx]
-				print(str(wid))
+			res = condition(slot)
+			if res:	
+				state['widget_scan']['found'] = True
+				state['widget_scan']['wid_id'] = wid_list[idx]
+				# print(str(wid))
 				return 1
+			# else:
+				# print('condition failed!')
+		# else:
+			# print('what happened to you, condition? %s' % str(condition))
 	
 	return 1
 	
@@ -275,11 +293,16 @@ def gs_scan_get_widget_from_list(slot):
 def gs_move_mouse_to_widget(slot):
 	# type: (GoalSlot)->int
 	'''param1 - widget identifier
+	scheme_state {'wid_id': TWidgetIdentifier}
 	'''
 	wid_identifier = slot.param1
-	if slot.state is not None:
-		if 'wid_id' in slot.state:
-			wid_identifier = slot.state['wid_id']
+	
+	if wid_identifier is None:
+		scheme_state = slot.get_scheme_state()
+		if 'widget_scan' in scheme_state:
+			if 'wid_id' in scheme_state['widget_scan']:
+				wid_identifier = scheme_state['widget_scan']['wid_id']
+
 	wid = controller_ui_util.obtain_widget(wid_identifier)
 	if wid is None:
 		return 0
@@ -297,6 +320,8 @@ def gs_is_widget_visible(slot):
 def gs_press_widget(slot):
 	# type: (GoalSlot)->int
 	'''param1 - widget identifier
+	scheme_state { 'widget_scan': { 'wid_id': TWidgetIdentifier}
+				 }
 	'''
 	state = slot.state
 	if state is None:	
@@ -304,9 +329,7 @@ def gs_press_widget(slot):
 			'hovered': False,
 			'clicked': False,
 		}
-	if slot.state_prev is not None and 'wid_id' in slot.state_prev:
-		slot.state['wid_id'] = slot.state_prev['wid_id']
-
+	
 	if not slot.state['hovered']:
 		result = gs_move_mouse_to_widget(slot) 
 		if result:
@@ -373,9 +396,17 @@ def gs_click_on_object(slot):
 		return 0
 		#todo handle failures...
 	if not slot.state['clicked']:
+		# print('\t clicking!')
 		click_mouse()
 		return 1
 	return 0
+
+def gs_click_to_talk(slot):
+	''' Similar to gs_click_on_object, except it immediately disables the automatic dialogue handler (because it could happen right away)
+	'''
+	Playtester.get_instance().dialog_handler_en(False) # halt the automatic dialogue handler
+	return gs_click_on_object(slot)
+	
 
 def dlg_reply(i):
 	print('Reply %d' % (i))
@@ -412,8 +443,9 @@ def gs_handle_dialogue(slot):
 			'line_number': -1,
 			'wait_for_dialog_counter': 0
 			}
+		Playtester.get_instance().dialog_handler_en(False)
 		return 0
-	Playtester.get_instance().dialog_handler_en(False)
+	
 
 	if dlg.is_engaged():
 		slot.state['was_in_dialog'] = True
@@ -444,6 +476,7 @@ def gs_handle_dialogue_prescripted(slot):
 	# print('gs_handle_dialogue_prescripted')
 	# goes through a pre-set reply specification:
 	# param1 is a list of replies (in linear sequence)
+	print('Disabling automatic dialogue handling')
 	Playtester.get_instance().dialog_handler_en(False) # halt the automatic dialogue handler
 
 	if slot.state is None:
@@ -477,7 +510,7 @@ def gs_handle_dialogue_prescripted(slot):
 	cur_idx = slot.state['reply_counter']
 	if cur_idx >= len(replies):
 		print("Reply script shorter than actual dialog! currently at ", cur_idx)
-		if dlg_reply_nonattack():
+		if dlg_reply_nonattack(ds):
 			return 0
 		dlg_reply(0)
 		return 0
@@ -545,34 +578,45 @@ def create_party_pool_add_pc_scheme():
 	wid_list = WID_IDEN.CHAR_POOL_CHARS
 
 	def check_widget(slot):
-		idx = slot.state['idx']
+		#type: (GoalSlot)->int
+		state = slot.get_scheme_state()
+		idx = state['widget_scan']['idx']
 		wid_list = slot.param1
 		wid_id = wid_list[idx]
-		print('checking widget:', wid_id)
+		# print('checking widget:', wid_id)
 		wid = controller_ui_util.obtain_widget(wid_id)
 		if wid is None:
-			print('not found')
+			# print('not found')
 			return False
 		if not wid.is_button_enabled:
-			print('button not enabled')
+			# print('button not enabled')
 			return False
-		print('ok')
+		
+		# print('rendered text: ', wid.rendered_text)
+		if wid.rendered_text.lower().find('has joined') >= 0:
+			# print('has already joined')
+			return False
+		if wid.rendered_text.lower().find('not compat') >= 0:
+			# print('not compatible')
+			return False
+		# print('ok!')
+		
 		return True
 
 	def gs_found(slot):
 		#type: (GoalSlot)->int
-		slot.state = dict(slot.state_prev)
-		if slot.state_prev['found']:
-			print('found it', slot.state_prev['idx'])
+		state = slot.get_scheme_state()
+		if state['widget_scan']['found']:
+			# print('found it', slot.state_prev['idx'])
 			return 1
 		return 0
 	cs.__set_stages__([
 		
-		GoalState('start', gs_scan_get_widget_from_list, ('check_result', 300), (), {'param1': wid_list, 'param2': check_widget } ),
-		GoalState('check_result', gs_found, ('press_char_btn', 300), ('end', 300), {'param1': WID_IDEN.CHAR_POOL_ADD_BTN } ),
-		GoalState('press_char_btn', gs_press_widget, ('press_add', 300), (), {'param1': None } ),
+		GoalState('start', gs_scan_get_widget_from_list, ('check_result', 100), (), {'param1': wid_list, 'param2': check_widget } ),
+		GoalState('check_result', gs_found, ('press_char_btn', 100), ('end', 300),  ),
+		GoalState('press_char_btn', gs_press_widget, ('press_add', 200), (), {'param1': None } ),
 		
-		GoalState('press_add', gs_press_widget, ('end', 300), (), {'param1': WID_IDEN.CHAR_POOL_ADD_BTN } ),
+		GoalState('press_add', gs_press_widget, ('end', 200), (), {'param1': WID_IDEN.CHAR_POOL_ADD_BTN } ),
 		GoalState('end', gs_wait_cb, ('end', 0), )
 	])
 	return cs
@@ -589,7 +633,8 @@ def create_new_game_scheme():
 		GoalState.from_sequence('add_party_members', [
 			GoalState('', gs_create_and_push_scheme, ('', 300), params={'param1': 'party_pool_add_pc', 'param2': (create_party_pool_add_pc_scheme, () )}),
 			GoalState('', gs_create_and_push_scheme, ('', 300), params={'param1': 'party_pool_add_pc', 'param2': (create_party_pool_add_pc_scheme, () )}),
-			GoalState('', gs_create_and_push_scheme, ('', 300), params={'param1': 'party_pool_add_pc', 'param2': (create_party_pool_add_pc_scheme, () )})
+			# GoalState('', gs_create_and_push_scheme, ('', 300), params={'param1': 'party_pool_add_pc', 'param2': (create_party_pool_add_pc_scheme, () )}),
+			# GoalState('', gs_create_and_push_scheme, ('', 300), params={'param1': 'party_pool_add_pc', 'param2': (create_party_pool_add_pc_scheme, () )})
 		], ('char_pool_begin_adventure', 300), ('char_pool_begin_adventure', 300))
 		+[
 		GoalState('char_pool_begin_adventure', gs_press_widget, ('do_shopmap', 100), (), {'param1': WID_IDEN.CHAR_POOL_BEGIN_ADVENTURE } ),
@@ -633,11 +678,11 @@ def create_shop_map_scheme():
 	cs.__set_stages__(
 		[ GoalState('start', gs_wait_cb, ('equipment_chests', 300) ), ] +
 		GoalState.from_sequence('equipment_chests', [
-			GoalState('', gs_click_on_object, ('', 500), (), {'param1': {'proto': 14575, } } ),
-			GoalState('', gs_handle_dialogue_prescripted, ('', 500), (),  ),
+			GoalState('', gs_click_to_talk, ('', 100), (), {'param1': {'proto': 14575, } } ),
+			GoalState('', gs_handle_dialogue_prescripted, ('', 500), (), {'param1': std_chest_dlg_choices } ),
 		], ('game_portal', 500), ()) +
 		GoalState.from_sequence('game_portal', [
-			GoalState('', gs_click_on_object, ('', 500), (), {'param1': {'proto': 14758, } } ),
+			GoalState('', gs_click_to_talk, ('', 100), (), {'param1': {'proto': 14758, } } ),
 			GoalState('', gs_handle_dialogue_prescripted, ('', 500), (), {'param1': std_chest_dlg_choices } ),
 		], ('do_vignette', 500), ()) +
 
@@ -654,7 +699,7 @@ def create_true_neutral_scheme():
 		[GoalState('start', gs_wait_cb, ('talk_jaroo', 500)),] +
 		GoalState.from_sequence('talk_jaroo', [
 			GoalState('', gs_scroll_to_tile, ('', 3500), params = {'param1': (488, 474) }),
-			GoalState('', gs_click_on_object, ('', 3000), params = {'param1': {'proto': 14322, 'location': location_from_axis(488, 474)}} ),
+			GoalState('', gs_click_to_talk, ('', 3000), params = {'param1': {'proto': 14322, 'location': location_from_axis(488, 474)}} ),
 			GoalState('', gs_handle_dialogue_prescripted, ('', 500), (), {'param1': druid_dlg_choices } ),
 		], ('do_hommlet', 500)) + 
 		[GoalState('do_hommlet', gs_push_scheme, ('end', 100), (), {'param1': 'hommlet0'} ),
@@ -709,7 +754,7 @@ def create_scheme_go_to_tile( loc ):
 		
 		GoalState('scroll_and_click', gs_scroll_to_tile_and_click, ('is_moving_loop', 700), params = {'param1': loc }),
 		# GoalState('arrived_at', gs_condition, ('end', 0)        , ('is_moving_loop', 100), params={'param1': arrived_at_check}),
-		GoalState('is_moving_loop' , gs_condition, ('is_moving', 800), ('check_arrived', 100), params={'param1': is_moving_check}),
+		GoalState('is_moving_loop' , gs_condition, ('is_moving_loop', 800), ('check_arrived', 100), params={'param1': is_moving_check}),
 		GoalState('check_arrived', gs_condition, ('end', 0), ('start', 100), params={'param1': arrived_at_check}),
 		
 		GoalState('end', gs_wait_cb, ('end', 10), ),
@@ -743,16 +788,16 @@ def create_hommlet_scheme0():
 			
 		], ('handle_inn', 500)) + 
 		GoalState.from_sequence('handle_inn', [
-		GoalState('', gs_click_on_object, ('', 1500), params = {'param1': {'proto': 14016}} ), # Ostler
+		GoalState('', gs_click_to_talk, ('', 1500), params = {'param1': {'proto': 14016}} ), # Ostler
 		GoalState('', gs_handle_dialogue_prescripted, ('', 1500), (), {'param1': [0,1,0,0,0,0,0] } ), 
 		GoalState('', gs_center_on_tile, ('', 800), params = {'param1':  (474,477) } ), # Furnok
-		GoalState('', gs_click_on_object, ('', 1500), params = {'param1': {'proto': 14025}} ), # Furnok
+		GoalState('', gs_click_to_talk, ('', 1500), params = {'param1': {'proto': 14025}} ), # Furnok
 		GoalState('', gs_handle_dialogue, ('', 500), (), {'param1': furnok_dlg_handler, 'param2': {1: 1, 130: 0, 140: 0, 150:0, 200:0, 210:0 } } ), # Furnk
 
 		GoalState('', gs_push_scheme, ('', 100), params={'param1': 'rest'}),
 
 		GoalState('', gs_center_on_tile, ('', 800), params = {'param1':  (483,483) } ), # Exit
-		GoalState('', gs_click_on_object, ('', 500), params = {'param1': {'proto': 14016}} ), # Ostler again - get lodging
+		GoalState('', gs_click_to_talk, ('', 500), params = {'param1': {'proto': 14016}} ), # Ostler again - get lodging
 		GoalState('', gs_handle_dialogue_prescripted, ('', 1500), (), {'param1': [0,0,0,0] } ), 
 
 		
