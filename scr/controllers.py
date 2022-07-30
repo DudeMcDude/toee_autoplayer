@@ -88,7 +88,7 @@ class GoalState(GoalStateCb):
                 state.after_failure = StateTrans.convert_state(after_f)
                 
             idx += 1
-            print(state.id, state.after_success)
+            # print(state.id, state.after_success)
             result.append(state)
         return result
 
@@ -315,8 +315,10 @@ class ControllerBase:
     __goal_slot__ = None  #type: GoalSlot
     __cur_scheme_instance__ = None #type: GoalStackEntry
 
-    __dialog_handler__ = lambda slot: 1
+    dialog_handler = lambda slot: 1
     __dialog_handler_en__ = True
+
+    __combat_handler__ = lambda slot: 1
     
     
     def __init__(self):
@@ -345,6 +347,9 @@ class ControllerBase:
     def dialog_handler_en(self, value):
         self.__dialog_handler_en__ = value
 
+    def set_combat_handler(self, cb):
+        self.__combat_handler__ = cb
+        return
 
     def push_scheme(self, scheme_id):
         #type: (str)-> bool
@@ -375,9 +380,15 @@ class ControllerBase:
             prev_entry = slot.goal_stack[0]
             print('pop_scheme: going back to ' + str(prev_entry.scheme_id))
             self.__cur_scheme_instance__ = prev_entry
-            self.set_active_scheme(prev_entry.scheme_id, entry_popped.state_save)
+            self.set_active_scheme(prev_entry.scheme_id) #, entry_popped.state_save)
         else:
             self.__cur_scheme_instance__ = None
+        return
+
+    def interrupt(self):
+        slot = self.__goal_slot__
+        if len(slot.goal_stack) > 1:
+            self.pop_scheme()
         return
 
     def schedule(self, delay_msec = 200, real_time = 1):
@@ -413,6 +424,15 @@ class ControllerBase:
             return
         else:
             slot.__dialog_state__ = None
+
+        if game.combat_is_active():
+            self.__was_in_combat__ = True
+            
+            delay = self.__combat_handler__(slot)
+            if delay > 0:
+                return self.schedule(delay)
+            else:
+                return self.schedule(100)
 
         result = scheme_inst.execute(slot)
 

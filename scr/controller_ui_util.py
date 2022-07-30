@@ -65,30 +65,36 @@ def move_mouse_to_widget(wid):
 
 
 def obtain_widget(identifier_list, widget_ids = None):
-    #type: ( list[aui.TWidgetIdentifier] | int | aui.TWidget , list[int] )-> aui.TWidget
+    #type: ( list[aui.TWidgetIdentifier | int | aui.TWidget | None] , list[int] )-> aui.TWidget
+    '''
+    * identifier_list: If None is specified, it just looks in the entire children list of the last found widget.
+         i.e. it finds 'any' child, not just those match a specific identifier.
+         Useful for when the widget naem is garbage and there is no identifying information...
+    '''
     import autoui as aui
     widget_ids = None
     find_res = []
     res = None # type: aui.TWidget
     
-    if isinstance(identifier_list, aui.TWidget):
+    if isinstance(identifier_list, aui.TWidget): # is already specified widget, just check if it's visible
         res = identifier_list
         return res if res.visible else None
-    elif type(identifier_list) == int:
+    elif type(identifier_list) == int: # is explicit widget_id (number), just fetch it directly
         widget_id = identifier_list
         res = aui.TWidget(widget_id)
         return res if res.visible else None
 
     for wid_identifier in identifier_list:
         
-        if type(wid_identifier) == int:
+        if type(wid_identifier) == int: # numbers are used to select from several widgets with identical identifiers (usually buttons/children)
             res = find_res[wid_identifier]
             continue
         elif len(find_res) > 1:
             print('obtain_widget: needs index to disambiguate results! ', str(find_res))
             return None
-        elif len(find_res) == 1:
+        elif len(find_res) == 1: # to be used with None entry e.g. identifier_list = [('utility_bar.c 481', ), None, 3]
             widget_ids = res.children_ids # search among last widget's children
+        
         # print(wid_identifier)
         find_res = aui.find_by_identifier( wid_identifier, widget_ids )
         if len(find_res) == 0:
@@ -137,7 +143,19 @@ class WID_IDEN:
     ]
     LOAD_GAME_LOAD_BTN = [ ('loadgame_ui.c 327'), ('loadgame_ui.c 351'), ]
     UTIL_BAR_CAMP_BTN = [ ('utility_bar_ui.c 481',), None, 4]
+    UTIL_BAR_MAP_BTN = [ ('utility_bar_ui.c 481',), None, 3]
+
     CAMPING_UI_REST_BTN = [ ('camping_ui.c 570',), None, 0]
+
+    TOWNMAP_UI_WORLD_BTN = [ ('townmap_ui_main_window',), ('townmap_ui_world_map_butn',) ]
+
+    WORLDMAP_UI_SELECTION_BTNS = [ 
+        [ ('worldmap_ui_selection_window',), ('worldmap_ui_acquired_location_butn',), x,  ] for x in range(21)
+    ]
+
+    RND_ENC_UI_ACCEPT_BTN = [('random_encounter_ui_main_window',), ('random_encounter_accept_butn')]
+    RND_ENC_EXIT_UI_ACCEPT_BTN = [('random_encounter_ui_exit_window',), ('random_encounter_exit_ok_button')]
+
     
 
 def get_window_rect(name = "Temple of Elemental Evil (Temple+)"):

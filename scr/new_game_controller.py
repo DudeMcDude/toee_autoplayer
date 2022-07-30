@@ -19,12 +19,19 @@ def gs_master(slot):
 		# print('master counter: ', slot.state['counter'])
 		slot.state['counter'] += 1
 	
+	if game.leader != OBJ_HANDLE_NULL: # make us durable!!!
+		for pc in game.party:
+			if pc.obj_get_int(obj_f_hp_pts) < 500:
+				pc.obj_set_int(obj_f_hp_pts, 500)
+				pc.stat_base_set(stat_strength,34)
+		
+
 	if gs_is_main_menu(slot):
 		
 		pt.add_scheme( create_load_game_scheme(1), 'load_game' )
 		pt.push_scheme('load_game')
 		# pt.push_scheme('new_game')
-	elif slot.state['counter'] >= 1:
+	elif slot.state['counter'] >= 1 and slot.state['counter'] <= 1000:
 		if game.quests[18].state != qs_completed:
 			pt.add_scheme( create_hommlet_scheme0(), 'hommlet0' )
 			pt.push_scheme('hommlet0')
@@ -32,9 +39,14 @@ def gs_master(slot):
 			pt.add_scheme( create_hommlet_scheme1(), 'hommlet1' )
 			pt.push_scheme('hommlet1')
 		else:
-			pt.add_scheme( create_goto_area(2), 'goto_moathouse' )
-			pt.push_scheme('goto_moathouse')
-			pass
+			leader = game.leader
+			if leader != OBJ_HANDLE_NULL:
+				game.areas[3] = 1 # nulb
+				if leader.map == 5001:
+					pt.push_scheme('goto_nulb')
+				else: #elif leader.map == 5002:
+					pt.push_scheme('goto_hommlet')
+				
 	elif slot.state['counter'] == 2:
 		# pt.add_scheme( create_load_game_scheme(1), 'load_game' )
 		# pt.push_scheme('load_game')
@@ -58,8 +70,12 @@ def setup_playtester(autoplayer):
 	
 	autoplayer.add_scheme( create_shop_map_scheme(), 'shopmap' )
 	autoplayer.add_scheme( create_master_scheme(), 'main' )
-
+	autoplayer.add_scheme( create_goto_area('moathouse'), 'goto_moathouse' )
+	autoplayer.add_scheme( create_goto_area('north hommlet'), 'goto_hommlet' )
+	autoplayer.add_scheme( create_goto_area('nulb'), 'goto_nulb' )
+					
 	autoplayer.set_dialog_handler(dialog_handler)
+	autoplayer.set_combat_handler(combat_handler)
 	
 	autoplayer.push_scheme('main')
 	print('Beginning scheme in 1 sec...')
@@ -192,6 +208,89 @@ def dialog_handler(slot):
 	
 	return handler.cb(ds, handler.presets, slot)
 
+def combat_handler(slot):
+	
+	Playtester.get_instance().interrupt()
+
+	def select_target(obj):
+		vlist = game.obj_list_vicinity(obj.location, OLC_NPC)
+		best_tgt = OBJ_HANDLE_NULL
+		least_dist = 100000
+		tgt_priority = []
+		for tgt in vlist:
+			if tgt.is_friendly(obj):
+				continue
+			if tgt.is_unconscious():
+				continue
+			flags = tgt.object_flags_get()
+			if flags & OF_DONTDRAW:
+				continue
+			
+			dist = tgt.distance_to(obj)
+			if dist < 15:
+				if obj.can_melee(tgt):
+					dist = 0
+			hp_pct = obj_percent_hp(tgt)
+			tgt_priority.append( [tgt, dist, hp_pct])
+		def sort_key(x):
+			dist   = x[1]
+			hp_pct = x[2]
+			if dist == 0:
+				return hp_pct
+			return dist + 100
+		
+		if len(tgt_priority) > 0:
+			tgt_priority.sort(key=sort_key)
+			print('possible targets: [distance, hp_pct]', tgt_priority)
+			return tgt_priority[0][0]
+		return OBJ_HANDLE_NULL #best_tgt
+	
+	obj = game.leader
+	if not game.combat_is_active():
+		return 500
+	if not (obj in game.party):
+		return 500
+	
+	def can_cast(spell_enum, spell_class, spell_level):
+		sp = PySpellStore( spell_enum , spell_class, spell_level)
+		return obj.can_cast_spell(sp)
+
+	import tpactions
+	actor = tpactions.get_current_tb_actor()
+	if obj != actor: # delay
+		return 500
+	
+	act_seq_cur = tpactions.get_cur_seq()
+	tgt = select_target(obj)
+	if tgt == OBJ_HANDLE_NULL: # end turn for now..
+		print('No target, ending turn')
+		press_space()
+		return 500
+
+	if obj.is_performing():
+		return 500
+	restup()
+	if True: #obj == game.party[1]: # ariel
+		result = obj.ai_strategy_execute(tgt)
+		if result == 1:
+			return 1000
+
+	# if act_seq_cur.tb_status.hourglass_state >= 4: # Full action bar
+	# 	print('Attacking ', tgt)
+	# 	if can_cast(spell_magic_missile, stat_level_wizard | 0x80, 1):
+	# 		obj.cast_spell(spell_magic_missile, tgt)
+	# 		return 500
+	# 	perform_action(D20A_UNSPECIFIED_ATTACK, obj, tgt, tgt.location)
+	# 	return 500
+	# if act_seq_cur.tb_status.hourglass_state >= 2: # Standard Action
+	#     # todo
+	#     pass
+	# if act_seq_cur.tb_status.hourglass_state >= 1: # Move Action
+	#     # todo
+	#     pass
+	print('Ending turn... ')
+	press_space()
+	return 300
 
 #region callbacks
 def gs_is_main_menu(slot):
@@ -289,13 +388,14 @@ def gs_press_widget(slot):
 				 }
 	'''
 	state = slot.state
-	if state is None:	
+	if state is None:
 		slot.state = {
 			'hovered': False,
 			'clicked': False,
 		}
 	
 	if not slot.state['hovered']:
+		print('gs_press_widget: moving cursor')
 		result = gs_move_mouse_to_widget(slot) 
 		if result:
 			slot.state['hovered']=True
@@ -303,6 +403,7 @@ def gs_press_widget(slot):
 		return 0
 		#todo handle failures...
 	if not slot.state['clicked']:
+		print('gs_press_widget: clicking')
 		click_mouse()
 		return 1
 	return 0
@@ -544,6 +645,7 @@ def create_party_pool_add_pc_scheme():
 			# print('found it', slot.state_prev['idx'])
 			return 1
 		return 0
+
 	cs.__set_stages__([
 		
 		GoalState('start', gs_scan_get_widget_from_list, ('check_result', 100), (), {'param1': wid_list, 'param2': check_widget } ),
@@ -567,8 +669,8 @@ def create_new_game_scheme():
 		GoalState.from_sequence('add_party_members', [
 			GoalState('', gs_create_and_push_scheme, ('', 300), params={'param1': 'party_pool_add_pc', 'param2': (create_party_pool_add_pc_scheme, () )}),
 			GoalState('', gs_create_and_push_scheme, ('', 300), params={'param1': 'party_pool_add_pc', 'param2': (create_party_pool_add_pc_scheme, () )}),
-			# GoalState('', gs_create_and_push_scheme, ('', 300), params={'param1': 'party_pool_add_pc', 'param2': (create_party_pool_add_pc_scheme, () )}),
-			# GoalState('', gs_create_and_push_scheme, ('', 300), params={'param1': 'party_pool_add_pc', 'param2': (create_party_pool_add_pc_scheme, () )})
+			GoalState('', gs_create_and_push_scheme, ('', 300), params={'param1': 'party_pool_add_pc', 'param2': (create_party_pool_add_pc_scheme, () )}),
+			GoalState('', gs_create_and_push_scheme, ('', 300), params={'param1': 'party_pool_add_pc', 'param2': (create_party_pool_add_pc_scheme, () )})
 		], ('char_pool_begin_adventure', 300), ('char_pool_begin_adventure', 300))
 		+[
 		GoalState('char_pool_begin_adventure', gs_press_widget, ('do_shopmap', 100), (), {'param1': WID_IDEN.CHAR_POOL_BEGIN_ADVENTURE } ),
@@ -644,7 +746,8 @@ def create_true_neutral_scheme():
 def create_rest_scheme():
 	cs = ControlScheme()
 	cs.__set_stages__(
-		[GoalState('start', gs_wait_cb, ('click_camp', 100), ) ,] +
+		[
+		GoalState('start', gs_wait_cb, ('click_camp', 100), ) ,] +
 		GoalState.from_sequence('click_camp', [
 		GoalState('', gs_press_widget, ('', 500), (), {'param1': WID_IDEN.UTIL_BAR_CAMP_BTN } ),
 		GoalState('', gs_press_widget, ('', 1500), (), {'param1': WID_IDEN.CAMPING_UI_REST_BTN } ),
@@ -699,11 +802,107 @@ def create_scheme_go_to_tile( loc ):
 	])
 	return cs
 
-def create_goto_area(area_id):
+def create_scheme_enter_building( loc, tgt_map_id = None ): #TODO
 	cs = ControlScheme()
-	cs.__set_stages__([
+	return cs
+
+def create_goto_area(area_name):
+	#type: (str)->ControlScheme
+
+	# TODO: handle if not outdoors... (seek exit or sthg like that)
+	# TODO: what if we're already there? currently handle this above...
+	cs = ControlScheme()
+	wid_list = WID_IDEN.WORLDMAP_UI_SELECTION_BTNS
+
+	def gs_goto_area_init(slot):
+		#type: (GoalSlot)->int
+		state = slot.get_scheme_state()
+		state['map_change_check'] = {'map': game.leader.map}
+		return 1
+	
+	def check_widget(slot):
+		#type: (GoalSlot)->int
+		state = slot.get_scheme_state()
+		idx = state['widget_scan']['idx']
+		wid_list = slot.param1
+		wid_id = wid_list[idx]
+		print('checking widget:', wid_id)
+		wid = controller_ui_util.obtain_widget(wid_id)
+		if wid is None:
+			# print('not found')
+			return False
+		if not wid.is_button_enabled:
+			# print('button not enabled')
+			return False
+		print('obtained widget: %s'%str(wid))
+		print('rendered text: ', wid.rendered_text)
+		if wid.rendered_text.lower().find(area_name.lower()) >= 0:
+			return True
+		return False
+
+	def gs_found(slot):
+		#type: (GoalSlot)->int
+		state = slot.get_scheme_state()
+		if state['widget_scan']['found']:
+			# print('found it', slot.state_prev['idx'])
+			return 1
+		return 0
+	
+	def map_change_check(slot):
+		#type: (GoalSlot)->int
+		state = slot.get_scheme_state()
+		if not 'map_change_check' in state:
+			print('map_change_check: initing with %s' % str(game.leader.map))
+			state['map_change_check'] = {'map': game.leader.map}
+			return 0
+		if state['map_change_check']['map'] != game.leader.map:
+			print('map_change_check: current %s is different than previous %s' % (str(game.leader.map), str(state['map_change_check']['map']) ))
+			return 1
+		print('map_change_check: no change %s' % ( str(state['map_change_check']['map']) ))
 		
-	])
+		return 0
+	
+	def gs_survival_check_active(slot):
+		wid = controller_ui_util.obtain_widget(WID_IDEN.RND_ENC_UI_ACCEPT_BTN)
+		if wid is None:
+			return 0
+		return 1
+	def gs_encounter_exit_dialog_active(slot):
+		wid = controller_ui_util.obtain_widget(WID_IDEN.RND_ENC_EXIT_UI_ACCEPT_BTN)
+		if wid is None:
+			return 0
+		return 1
+	def gs_is_townmap_active(slot):
+		wid = controller_ui_util.obtain_widget(WID_IDEN.TOWNMAP_UI_WORLD_BTN)
+		if wid is None:
+			return 0
+		return 1
+
+
+	cs.__set_stages__(
+		[
+			GoalState('start', gs_goto_area_init, ('check_outdoors',100 ), ),
+			GoalState('check_outdoors', gs_condition, ('click_map', 500), ('end', 100), params={'param1': lambda slot: game.is_outdoor()} ) ,
+		
+			GoalState('click_map', gs_press_widget, ('exiting_random_encounter_check', 500), (), {'param1': WID_IDEN.UTIL_BAR_MAP_BTN } ),
+			GoalState('exiting_random_encounter_check', gs_condition, ('press_encounter_exit', 100), ('is_townmap_ui', 100), params={'param1':gs_encounter_exit_dialog_active }),
+			GoalState('press_encounter_exit', gs_press_widget, ('is_townmap_ui', 100), params={'param1':WID_IDEN.RND_ENC_EXIT_UI_ACCEPT_BTN }),
+			
+			GoalState('is_townmap_ui', gs_condition, ('press_worldmap', 500), ('find_acq_loc_btn', 100), params={'param1': gs_is_townmap_active} ) ,
+			GoalState('press_worldmap', gs_press_widget, ('find_acq_loc_btn', 600), (), {'param1': WID_IDEN.TOWNMAP_UI_WORLD_BTN } ),
+
+		
+			GoalState('find_acq_loc_btn', gs_scan_get_widget_from_list, ('check_result', 100), (), {'param1': wid_list, 'param2': check_widget } ),
+			GoalState('check_result', gs_found, ('press_acq_loc_btn', 100), ('end', 300),  ),
+			GoalState('press_acq_loc_btn', gs_press_widget, ('wait_loop', 200), (), {'param1': None } ),
+
+			GoalState('wait_loop', gs_wait_cb, ('wait_for_map_change', 500), ) ,	
+			GoalState('wait_for_map_change', gs_condition, ('end', 100), ('survival_check_window', 100),params={'param1': map_change_check} ) ,
+			GoalState('survival_check_window', gs_condition, ('press_encounter_accept', 100), ('wait_loop', 100), params={'param1': gs_survival_check_active} ) ,
+			GoalState('press_encounter_accept', gs_press_widget, ('end', 100), params={'param1':WID_IDEN.RND_ENC_UI_ACCEPT_BTN }),
+
+			GoalState('end', gs_wait_cb, ('end', 500), ) ,	
+		])
 	return cs
 
 def create_hommlet_scheme1():
