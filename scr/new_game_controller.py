@@ -21,18 +21,50 @@ def gs_master(slot):
 	
 	if gs_is_main_menu(slot):
 		
-		pt.add_scheme( create_load_game_scheme(0), 'load_game' )
+		pt.add_scheme( create_load_game_scheme(1), 'load_game' )
 		pt.push_scheme('load_game')
 		# pt.push_scheme('new_game')
-	elif slot.state['counter'] == 1:
-		pt.add_scheme( create_hommlet_scheme0(), 'hommlet0' )
-		pt.push_scheme('hommlet0')
+	elif slot.state['counter'] >= 1:
+		if game.quests[18].state != qs_completed:
+			pt.add_scheme( create_hommlet_scheme0(), 'hommlet0' )
+			pt.push_scheme('hommlet0')
+		elif game.quests[72].state == qs_unknown:
+			pt.add_scheme( create_hommlet_scheme1(), 'hommlet1' )
+			pt.push_scheme('hommlet1')
+		else:
+			pt.add_scheme( create_goto_area(2), 'goto_moathouse' )
+			pt.push_scheme('goto_moathouse')
+			pass
 	elif slot.state['counter'] == 2:
-		pt.add_scheme( create_load_game_scheme(0), 'load_game' )
-		pt.push_scheme('load_game')
+		# pt.add_scheme( create_load_game_scheme(1), 'load_game' )
+		# pt.push_scheme('load_game')
+		pass
 	else:
-		pt.push_scheme('load_game')
+		# pt.push_scheme('load_game')
+		pass
 	return 0
+
+def setup_playtester(autoplayer):
+	#type: (Playtester)->None
+	autoplayer = autoplayer #type: ControllerBase
+	autoplayer.__logging__ = True
+	from controller_console import ControllerConsole
+	# autoplayer.console = ControllerConsole()
+	autoplayer.add_scheme( create_new_game_scheme(), 'new_game' )
+	autoplayer.add_scheme( create_load_game_scheme(), 'load_game' )
+	autoplayer.add_scheme( create_true_neutral_scheme(), 'true_neutral_vig' )
+	autoplayer.add_scheme( create_hommlet_scheme0(), 'hommlet0')
+	autoplayer.add_scheme( create_rest_scheme(), 'rest' )
+	
+	autoplayer.add_scheme( create_shop_map_scheme(), 'shopmap' )
+	autoplayer.add_scheme( create_master_scheme(), 'main' )
+
+	autoplayer.set_dialog_handler(dialog_handler)
+	
+	autoplayer.push_scheme('main')
+	print('Beginning scheme in 1 sec...')
+	autoplayer.schedule(1000, real_time=1)
+	return
 
 def create_master_scheme():
 	cs = ControlScheme()
@@ -160,27 +192,6 @@ def dialog_handler(slot):
 	
 	return handler.cb(ds, handler.presets, slot)
 
-def setup_playtester(autoplayer):
-	#type: (Playtester)->None
-	autoplayer = autoplayer #type: ControllerBase
-	autoplayer.__logging__ = True
-	from controller_console import ControllerConsole
-	autoplayer.console = ControllerConsole()
-	autoplayer.add_scheme( create_new_game_scheme(), 'new_game' )
-	autoplayer.add_scheme( create_load_game_scheme(), 'load_game' )
-	autoplayer.add_scheme( create_true_neutral_scheme(), 'true_neutral_vig' )
-	autoplayer.add_scheme( create_hommlet_scheme0(), 'hommlet0')
-	autoplayer.add_scheme( create_rest_scheme(), 'rest' )
-	
-	autoplayer.add_scheme( create_shop_map_scheme(), 'shopmap' )
-	autoplayer.add_scheme( create_master_scheme(), 'main' )
-
-	autoplayer.set_dialog_handler(dialog_handler)
-	
-	autoplayer.push_scheme('main')
-	print('Beginning scheme in 1 sec...')
-	autoplayer.schedule(1000, real_time=1)
-	return
 
 #region callbacks
 def gs_is_main_menu(slot):
@@ -414,6 +425,8 @@ def gs_handle_dialogue(slot):
 	presets  = slot.param2
 	if presets is None:
 		presets = {}
+	if reply_cb is None:
+		reply_cb = dialog_handler	
 	
 	ds = dlg.get_current_state()
 
@@ -686,6 +699,69 @@ def create_scheme_go_to_tile( loc ):
 	])
 	return cs
 
+def create_goto_area(area_id):
+	cs = ControlScheme()
+	cs.__set_stages__([
+		
+	])
+	return cs
+
+def create_hommlet_scheme1():
+	cs = ControlScheme()
+	JAROO_DOOR_ICON_LOC = (614, 518)
+	JAROO_EXIT_ICON_LOC = (495, 478)
+
+	def jaroo_handler(ds, presets, slot):
+		N = ds.reply_count
+		npc_line = ds.line_number
+		def find_target_line_reply(target_line_id):
+			for idx in range(N):
+				if ds.get_npc_reply_id(idx) == target_line_id: # why haven't you reported
+					return idx
+			return -1
+		
+		preferred_target_lines = [
+			318, #why haven't you reported to hrudek
+			346 # cleared moathouse
+		]
+
+		for line in preferred_target_lines:
+			idx = find_target_line_reply(line)
+			if idx >= 0: return idx
+
+		if npc_line == 1: # greetins
+			return 0
+		if npc_line == 80:
+			idx = find_target_line_reply(0)
+			if idx >= 0: return idx
+		
+		return 0 # default
+		
+
+	cs.__set_stages__(
+		[
+		GoalState('start', gs_condition, ('go_jaroo', 100), ('handle_jaroo', 100), params={'param1': lambda slot: game.leader.map == 5001}),
+		] +
+		GoalState.from_sequence('go_jaroo', [
+			GoalState('', gs_create_and_push_scheme, ('', 500), params = {'param1': 'goto', 'param2': (create_scheme_go_to_tile, ( (620, 520), ) ) }),
+			GoalState('', gs_scroll_to_tile_and_click, ('', 500), params = {'param1': JAROO_DOOR_ICON_LOC }),
+			GoalState('', gs_condition, ('', 500), params = {'param1': lambda slot: game.leader.map == 5042 }),	
+		], ('handle_jaroo', 500)) +
+
+		GoalState.from_sequence('handle_jaroo', [
+			GoalState('', gs_click_to_talk, ('', 1500), params = {'param1': {'proto': 14005}} ), # Jaroo
+			GoalState('', gs_handle_dialogue, ('', 500), (), {'param1': jaroo_handler, 'param2': {318: 0, 323: 1, } } ), # Jaroo
+			
+			GoalState('', gs_center_on_tile, ('', 400), params = {'param1':  (495,478) } ), # Exit
+			GoalState('', gs_scroll_to_tile_and_click, ('', 500), params = {'param1': JAROO_EXIT_ICON_LOC }),
+		
+
+		], ('end', 500)) +
+
+		[GoalState('end', gs_idle, ('end', 100) ),
+		])
+	return cs
+
 def create_hommlet_scheme0():
 	cs = ControlScheme()
 	WENCH_DOOR_ICON_LOC = (617, 395)
@@ -710,9 +786,7 @@ def create_hommlet_scheme0():
 		GoalState.from_sequence('go_inn', [
 			GoalState('', gs_create_and_push_scheme, ('', 500), params = {'param1': 'goto', 'param2': (create_scheme_go_to_tile, ( (619, 405), ) ) }),
 			GoalState('', gs_scroll_to_tile_and_click, ('', 500), params = {'param1': WENCH_DOOR_ICON_LOC }),
-			GoalState('', gs_condition, ('', 500), params = {'param1': lambda slot: game.leader.map == 5007 }),
-			
-			
+			GoalState('', gs_condition, ('', 500), params = {'param1': lambda slot: game.leader.map == 5007 }),	
 		], ('handle_inn', 500)) + 
 
 		GoalState.from_sequence('handle_inn', [
@@ -722,12 +796,11 @@ def create_hommlet_scheme0():
 			GoalState('', gs_click_to_talk, ('', 1500), params = {'param1': {'proto': 14025}} ), # Furnok
 			GoalState('', gs_handle_dialogue, ('', 500), (), {'param1': furnok_dlg_handler, 'param2': {1: 1, 130: 0, 140: 0, 150:0, 200:0, 210:0 } } ), # Furnk
 
-			GoalState('', gs_push_scheme, ('', 100), params={'param1': 'rest'}),
-
-			GoalState('', gs_center_on_tile, ('', 800), params = {'param1':  (483,483) } ), # Exit
+			GoalState('', gs_center_on_tile, ('', 400), params = {'param1':  (483,483) } ), # Exit
 			GoalState('', gs_click_to_talk, ('', 500), params = {'param1': {'proto': 14016}} ), # Ostler again - get lodging
 			GoalState('', gs_handle_dialogue_prescripted, ('', 1500), (), {'param1': [0,0,0,0] } ), 
 
+			GoalState('', gs_push_scheme, ('', 100), params={'param1': 'rest'}),
 			
 			GoalState('', gs_center_on_tile, ('', 800), params = {'param1':  (483,483) } ), # Exit
 			GoalState('', gs_scroll_to_tile_and_click, ('', 500), params = {'param1': WENCH_EXIT_ICON_LOC }),
