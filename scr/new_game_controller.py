@@ -8,86 +8,39 @@ import controller_ui_util
 import gamedialog as dlg
 
 
-class ControllerConsole:
-	txt = None
-	btn = None
-	def __init__(self):
-		ROOT_ID = "controller_gui"
-		w=tpgui._add_root_container(ROOT_ID, 500,256)
-		wind = tpgui._get_container(ROOT_ID)
-		wind.x = 10; wind.y = 50
-		self.wnd = wind
 
-		# Add background image
-		w_img = wind.add_image("art/splash/legal0322_1_1.tga")
-
-		GOAL_STACK_WND_ID = 'goal_stack_wnd'
-		tpgui._add_container(ROOT_ID, GOAL_STACK_WND_ID, 500, 200)
-		subw = tpgui._get_container(GOAL_STACK_WND_ID)
-		print(str(subw))
-		subw.y = 38
-
-		# Add title text from mesline
-		title_txt = game.get_mesline("mes\\pc_creation.mes", 18013)
-		w_txt = subw.add_text(title_txt); w_txt.y = 38; w_txt.x = 0
-		w_txt.set_style_by_id("priory-title") # get style from text_styles.json
-		#w_txt.style.point_size = 20 # this does not work on predefined fonts
-		w_txt.set_text("")
-		self.txt = w_txt
+def gs_master(slot):
+	pt = Playtester.get_instance()
+	if slot.state is None:
+		slot.state = {
+			'counter': 0
+		}
+	else:
+		# print('master counter: ', slot.state['counter'])
+		slot.state['counter'] += 1
+	
+	if gs_is_main_menu(slot):
 		
-		# # Add freeform text
-		# w_txt2 = wind.add_text("Body text"); w_txt2.y = 20
-		# w_txt2.style.point_size = 18
+		pt.add_scheme( create_load_game_scheme(0), 'load_game' )
+		pt.push_scheme('load_game')
+		# pt.push_scheme('new_game')
+	elif slot.state['counter'] == 1:
+		pt.add_scheme( create_hommlet_scheme0(), 'hommlet0' )
+		pt.push_scheme('hommlet0')
+	elif slot.state['counter'] == 2:
+		pt.add_scheme( create_load_game_scheme(0), 'load_game' )
+		pt.push_scheme('load_game')
+	else:
+		pt.push_scheme('load_game')
+	return 0
 
-
-		b = tpgui._add_button(GOAL_STACK_WND_ID, "btn1")
-		b.set_text("Goal Stack"); b.x = 0; b.y = 0
-		b.set_style_id("chargen-button")
-		self.btn = b
-		def butclick():
-			# b = tpgui._get_button("btn1")
-			slot = Playtester.get_instance().__goal_slot__
-			scheme = Playtester.get_instance().get_cur_scheme()
-			state_txt = "Cur scheme: "
-			if scheme is not None:
-				state_txt += str(scheme) + " "
-			else:
-				state_txt += "None "
-			
-			if slot is not None:
-				state_txt += ", Goal Stack:" + str(slot.goal_stack)
-			
-			self.txt.set_text(state_txt)
-			# self.wnd.bring_to_front()
-			return True
-		b.set_click_handler( butclick )
-
-
-		b2 = tpgui._add_button(ROOT_ID, "btn2")
-		b2.set_text("_"); b2.x = 0; b2.y = 0
-		b2.set_style_id("chargen-button")
-		b2.width = 28
-		self.btn2 = b2
-		def b2_click():
-			if wind.height > 40:
-				wind.height = 40
-				wind.width = 60
-				b2.set_text("[[ ]]")
-				b2.width = 28
-				try:
-					subw.hide()
-				except Exception as e:
-					print(str(e))
-				# self.txt.hide()
-			else:
-				b2.set_text("_")
-				wind.height = 256
-				wind.width = 400
-				b2.width = 28
-				subw.show()
-				# self.txt.show()
-			return True
-		b2.set_click_handler( b2_click )
+def create_master_scheme():
+	cs = ControlScheme()
+	cs.__set_stages__( [
+		GoalState('start', gs_master, ('end', 500) ),
+		GoalState('end', gs_master, ('start', 500), ('start',500) )
+	])
+	return cs
 
 
 
@@ -211,6 +164,7 @@ def setup_playtester(autoplayer):
 	#type: (Playtester)->None
 	autoplayer = autoplayer #type: ControllerBase
 	autoplayer.__logging__ = True
+	from controller_console import ControllerConsole
 	autoplayer.console = ControllerConsole()
 	autoplayer.add_scheme( create_new_game_scheme(), 'new_game' )
 	autoplayer.add_scheme( create_load_game_scheme(), 'load_game' )
@@ -532,45 +486,12 @@ def gs_condition(slot):
 	cond_cb= slot.param1
 	if slot.state is None and slot.param2 is not None:
 		slot.state = dict(slot.param2)
-	if cond_cb(slot.state):
+	if cond_cb(slot):
 		return 1
 	return 0
 
 #endregion
 
-
-def gs_master(slot):
-	pt = Playtester.get_instance()
-	if slot.state is None:
-		slot.state = {
-			'counter': 0
-		}
-	else:
-		# print('master counter: ', slot.state['counter'])
-		slot.state['counter'] += 1
-	
-	if gs_is_main_menu(slot):
-		
-		# pt.add_scheme( create_load_game_scheme(1), 'load_game' )
-		# pt.push_scheme('load_game')
-		pt.push_scheme('new_game')
-	elif slot.state['counter'] == 1:
-		pt.add_scheme( create_load_game_scheme(1), 'load_game' )
-		pt.push_scheme('load_game')
-	elif slot.state['counter'] == 2:
-		pt.add_scheme( create_hommlet_scheme0(), 'hommlet0' )
-		pt.push_scheme('hommlet0')
-	else:
-		pt.push_scheme('load_game')
-	return 0
-
-def create_master_scheme():
-	cs = ControlScheme()
-	cs.__set_stages__( [
-		GoalState('start', gs_master, ('end', 500) ),
-		GoalState('end', gs_master, ('start', 500), ('start',500) )
-	])
-	return cs
 
 
 def create_party_pool_add_pc_scheme():
@@ -725,19 +646,23 @@ def create_scheme_go_to_tile( loc ):
 	def is_moving_check(slot):
 		if slot.state is None: # initialize locs
 			slot.state = {}
-			for n in len(game.party):
+			for n in range(len(game.party)):
 				pc = game.party[n]
 				slot.state['pc%d' % n] = pc.location
 			slot.state['map'] = game.leader.map
 			return 1
 		
 		result = 0
-		for n in len(game.party):
+		for n in range(len(game.party)):
 			pc = game.party[n]
-			prev_loc = slot.state['pc%d' % n]
-			if prev_loc != pc.location:
-				result = 1
-				slot.state['pc%d' % n] = pc.location
+			key = 'pc%d' % n
+			if key in slot.state:
+				prev_loc = slot.state[key]	
+				if prev_loc != pc.location:
+					result = 1
+					slot.state['pc%d' % n] = pc.location
+			else:
+				slot.state[key] = pc.location
 		return result
 
 	def arrived_at_check(slot):
@@ -779,7 +704,9 @@ def create_hommlet_scheme0():
 		return 0 # default
 
 	cs.__set_stages__( 
-		[GoalState('start', gs_wait_cb, ('go_inn', 500)),] +
+		[
+		GoalState('start', gs_condition, ('go_inn', 100), ('handle_inn', 100), params={'param1': lambda slot: game.leader.map == 5001}),
+		] +
 		GoalState.from_sequence('go_inn', [
 			GoalState('', gs_create_and_push_scheme, ('', 500), params = {'param1': 'goto', 'param2': (create_scheme_go_to_tile, ( (619, 405), ) ) }),
 			GoalState('', gs_scroll_to_tile_and_click, ('', 500), params = {'param1': WENCH_DOOR_ICON_LOC }),
@@ -787,22 +714,23 @@ def create_hommlet_scheme0():
 			
 			
 		], ('handle_inn', 500)) + 
+
 		GoalState.from_sequence('handle_inn', [
-		GoalState('', gs_click_to_talk, ('', 1500), params = {'param1': {'proto': 14016}} ), # Ostler
-		GoalState('', gs_handle_dialogue_prescripted, ('', 1500), (), {'param1': [0,1,0,0,0,0,0] } ), 
-		GoalState('', gs_center_on_tile, ('', 800), params = {'param1':  (474,477) } ), # Furnok
-		GoalState('', gs_click_to_talk, ('', 1500), params = {'param1': {'proto': 14025}} ), # Furnok
-		GoalState('', gs_handle_dialogue, ('', 500), (), {'param1': furnok_dlg_handler, 'param2': {1: 1, 130: 0, 140: 0, 150:0, 200:0, 210:0 } } ), # Furnk
+			GoalState('', gs_click_to_talk, ('', 1500), params = {'param1': {'proto': 14016}} ), # Ostler
+			GoalState('', gs_handle_dialogue_prescripted, ('', 1500), (), {'param1': [0,1,0,0,0,0,0] } ), 
+			GoalState('', gs_center_on_tile, ('', 800), params = {'param1':  (474,477) } ), # Furnok
+			GoalState('', gs_click_to_talk, ('', 1500), params = {'param1': {'proto': 14025}} ), # Furnok
+			GoalState('', gs_handle_dialogue, ('', 500), (), {'param1': furnok_dlg_handler, 'param2': {1: 1, 130: 0, 140: 0, 150:0, 200:0, 210:0 } } ), # Furnk
 
-		GoalState('', gs_push_scheme, ('', 100), params={'param1': 'rest'}),
+			GoalState('', gs_push_scheme, ('', 100), params={'param1': 'rest'}),
 
-		GoalState('', gs_center_on_tile, ('', 800), params = {'param1':  (483,483) } ), # Exit
-		GoalState('', gs_click_to_talk, ('', 500), params = {'param1': {'proto': 14016}} ), # Ostler again - get lodging
-		GoalState('', gs_handle_dialogue_prescripted, ('', 1500), (), {'param1': [0,0,0,0] } ), 
+			GoalState('', gs_center_on_tile, ('', 800), params = {'param1':  (483,483) } ), # Exit
+			GoalState('', gs_click_to_talk, ('', 500), params = {'param1': {'proto': 14016}} ), # Ostler again - get lodging
+			GoalState('', gs_handle_dialogue_prescripted, ('', 1500), (), {'param1': [0,0,0,0] } ), 
 
-		
-		GoalState('', gs_center_on_tile, ('', 800), params = {'param1':  (483,483) } ), # Exit
-		GoalState('', gs_scroll_to_tile_and_click, ('', 500), params = {'param1': WENCH_EXIT_ICON_LOC }),
+			
+			GoalState('', gs_center_on_tile, ('', 800), params = {'param1':  (483,483) } ), # Exit
+			GoalState('', gs_scroll_to_tile_and_click, ('', 500), params = {'param1': WENCH_EXIT_ICON_LOC }),
 		
 
 		], ('end', 500))
