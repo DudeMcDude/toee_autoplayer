@@ -245,7 +245,7 @@ class ControlScheme:
             stage = stage # type: GoalState # this line is just for intellisense...
             next_id = stage.after_success.new_state
             if self.__stages__.get(next_id) is None:
-                print('Error! stage not found: ' + str(next_id))
+                print('Error! stage %s could not find next ID = (%s) ' % (stage.id ,str(next_id)))
                 exit()
         return
 

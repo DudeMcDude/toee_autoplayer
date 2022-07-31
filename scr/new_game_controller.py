@@ -7,7 +7,13 @@ import autoui as aui
 import controller_ui_util
 import gamedialog as dlg
 
-
+def cheat_buff():
+	if game.leader != OBJ_HANDLE_NULL: # make us durable!!!
+		for pc in game.party:
+			if pc.obj_get_int(obj_f_hp_pts) < 500:
+				pc.obj_set_int(obj_f_hp_pts, 500)
+				pc.stat_base_set(stat_strength,32)
+	return
 
 def gs_master(slot):
 	pt = Playtester.get_instance()
@@ -19,11 +25,7 @@ def gs_master(slot):
 		# print('master counter: ', slot.state['counter'])
 		slot.state['counter'] += 1
 	
-	if game.leader != OBJ_HANDLE_NULL: # make us durable!!!
-		for pc in game.party:
-			if pc.obj_get_int(obj_f_hp_pts) < 500:
-				pc.obj_set_int(obj_f_hp_pts, 500)
-				pc.stat_base_set(stat_strength,34)
+	cheat_buff()
 		
 
 	if gs_is_main_menu(slot):
@@ -43,8 +45,10 @@ def gs_master(slot):
 			if leader != OBJ_HANDLE_NULL:
 				game.areas[3] = 1 # nulb
 				if leader.map == 5001:
-					pt.push_scheme('goto_nulb')
+					pt.push_scheme('rest')
+					# pt.push_scheme('goto_nulb')
 				else: #elif leader.map == 5002:
+					return 0
 					pt.push_scheme('goto_hommlet')
 				
 	elif slot.state['counter'] == 2:
@@ -66,12 +70,13 @@ def setup_playtester(autoplayer):
 	autoplayer.add_scheme( create_load_game_scheme(), 'load_game' )
 	autoplayer.add_scheme( create_true_neutral_scheme(), 'true_neutral_vig' )
 	autoplayer.add_scheme( create_hommlet_scheme0(), 'hommlet0')
+	autoplayer.add_scheme( create_ui_camp_rest_scheme(), 'ui_camp_rest' )
 	autoplayer.add_scheme( create_rest_scheme(), 'rest' )
-	
+
 	autoplayer.add_scheme( create_shop_map_scheme(), 'shopmap' )
 	autoplayer.add_scheme( create_master_scheme(), 'main' )
 	autoplayer.add_scheme( create_goto_area('moathouse'), 'goto_moathouse' )
-	autoplayer.add_scheme( create_goto_area('north hommlet'), 'goto_hommlet' )
+	autoplayer.add_scheme( create_goto_area('south hommlet'), 'goto_hommlet' )
 	autoplayer.add_scheme( create_goto_area('nulb'), 'goto_nulb' )
 					
 	autoplayer.set_dialog_handler(dialog_handler)
@@ -185,8 +190,6 @@ dialog_handler_dict = {
 
 	416: DialogHandler([0,0,1]) # std equipment chest
 }
-
-
 
 def dialog_handler(slot):
 	#type: (GoalSlot)->int
@@ -354,61 +357,6 @@ def gs_scan_get_widget_from_list(slot):
 	return 1
 	
 
-def gs_move_mouse_to_widget(slot):
-	# type: (GoalSlot)->int
-	'''param1 - widget identifier
-	scheme_state {'wid_id': TWidgetIdentifier}
-	'''
-	wid_identifier = slot.param1
-	
-	if wid_identifier is None:
-		scheme_state = slot.get_scheme_state()
-		if 'widget_scan' in scheme_state:
-			if 'wid_id' in scheme_state['widget_scan']:
-				wid_identifier = scheme_state['widget_scan']['wid_id']
-
-	wid = controller_ui_util.obtain_widget(wid_identifier)
-	if wid is None:
-		return 0
-	controller_ui_util.move_mouse_to_widget(wid)
-	return 1
-
-def gs_is_widget_visible(slot):
-	#type: (GoalSlot)->int
-	wid_identifier = slot.param1
-	wid = controller_ui_util.obtain_widget(wid_identifier)
-	if wid is None:
-		return 0
-	return 1
-
-def gs_press_widget(slot):
-	# type: (GoalSlot)->int
-	'''param1 - widget identifier
-	scheme_state { 'widget_scan': { 'wid_id': TWidgetIdentifier}
-				 }
-	'''
-	state = slot.state
-	if state is None:
-		slot.state = {
-			'hovered': False,
-			'clicked': False,
-		}
-	
-	if not slot.state['hovered']:
-		print('gs_press_widget: moving cursor')
-		result = gs_move_mouse_to_widget(slot) 
-		if result:
-			slot.state['hovered']=True
-			return 0
-		return 0
-		#todo handle failures...
-	if not slot.state['clicked']:
-		print('gs_press_widget: clicking')
-		click_mouse()
-		return 1
-	return 0
-
-
 def gs_move_mouse_to_object(slot):
 	# print('gs_move_mouse_to_object')
 	# type: (GoalSlot)->int
@@ -474,32 +422,6 @@ def gs_click_to_talk(slot):
 	return gs_click_on_object(slot)
 	
 
-def dlg_reply(i):
-	print('Reply %d' % (i))
-	press_key(DIK_1 + i)
-	return
-
-def find_attack_lines(dlg_state):
-	#type: (dlg.DialogState)->list
-	attack_lines = []
-	N = dlg_state.reply_count
-	for i in range(N):
-		effect = dlg_state.get_reply_effect(i)
-		if effect.find('npc.attack') >= 0:
-			attack_lines.append(i)
-	return attack_lines
-
-def dlg_reply_nonattack(ds):
-	#type: (dlg.DialogState)-> int
-	# for now just select any non-attacking lines
-	attack_lines = find_attack_lines(ds)
-	for i in range(ds.reply_count):
-		if i in attack_lines:
-			continue
-		dlg_reply(i)
-		return 1
-	return 0
-
 def gs_handle_dialogue(slot):
 	# param1 - callback for handling current dialogue state
 	if slot.state is None:
@@ -540,69 +462,6 @@ def gs_handle_dialogue(slot):
 	dlg_reply(reply)
 	return 0
 
-def gs_handle_dialogue_prescripted(slot):
-	# print('gs_handle_dialogue_prescripted')
-	# goes through a pre-set reply specification:
-	# param1 is a list of replies (in linear sequence)
-	print('Disabling automatic dialogue handling')
-	Playtester.get_instance().dialog_handler_en(False) # halt the automatic dialogue handler
-
-	if slot.state is None:
-		slot.state = {
-			'was_in_dialog': False,
-			'reply_counter': 0,
-			'line_number': -1,
-			'wait_for_dialog_counter': 0
-			}
-		return 0
-
-	if dlg.is_engaged():
-		slot.state['was_in_dialog'] = True
-	else:
-		if slot.state['was_in_dialog']:
-			Playtester.get_instance().dialog_handler_en(True)
-			return 1
-		else:
-			slot.state['wait_for_dialog_counter'] += 1
-			return 0
-	
-	ds = dlg.get_current_state()
-	N = ds.reply_count
-	cur_line = ds.line_number
-	prev_line = slot.state['line_number']
-	if cur_line == prev_line:
-		print("Repeating the same line??")
-	slot.state['line_number'] = cur_line
-
-	replies = slot.param1
-	cur_idx = slot.state['reply_counter']
-	if cur_idx >= len(replies):
-		print("Reply script shorter than actual dialog! currently at ", cur_idx)
-		if dlg_reply_nonattack(ds):
-			return 0
-		dlg_reply(0)
-		return 0
-	
-	cur_reply = replies[cur_idx]
-	if cur_reply < N: # normal case
-		slot.state['reply_counter'] += 1
-		dlg_reply(cur_reply)
-		return 0
-	
-	# fallback
-	print("Warning: bad reply ID!")
-	slot.state['reply_counter'] += 1
-	dlg_reply(0)
-	return 0
-
-def gs_condition(slot):
-	# param1 - condition callback
-	cond_cb= slot.param1
-	if slot.state is None and slot.param2 is not None:
-		slot.state = dict(slot.param2)
-	if cond_cb(slot):
-		return 1
-	return 0
 
 #endregion
 
@@ -744,6 +603,52 @@ def create_true_neutral_scheme():
 	return cs
 
 def create_rest_scheme():
+	WELCOME_WENCH_MAP_ID = 5007; WELCOME_WENCH_DOOR_ICON_LOC = (617, 395)
+	def init_rest_scheme(slot):
+		#type: (GoalSlot)->int
+		state =slot.get_scheme_state()
+
+		loc = (500,500)
+		tgt_map_id = -1
+		if game.leader.map == 5001: # Hommlet
+			loc        = WELCOME_WENCH_DOOR_ICON_LOC
+			tgt_map_id = WELCOME_WENCH_MAP_ID
+
+		args = ( loc, tgt_map_id )
+		
+		state['push_scheme'] = {
+			'id': 'goto_building',
+			'callback': (create_scheme_enter_building, args)
+		}
+		state['target_map'] = tgt_map_id
+		return 1
+	
+	def check_map(slot):
+		#type: (GoalSlot)->int
+		state =slot.get_scheme_state()
+
+		if state['target_map'] == game.leader.map: 
+			return 1
+		if state['target_map'] == -1:
+			import random_encounter
+			sleep_safety = random_encounter.can_sleep()
+			if sleep_safety == SLEEP_DANGEROUS or sleep_safety == SLEEP_SAFE:
+				return 1
+		return 0
+
+	cs = ControlScheme()
+	cs.__set_stages__([
+		GoalState('start', init_rest_scheme, ('check_map', 100),  ),
+		GoalState('check_map', gs_condition, ('start_resting', 100), ('go_building', 100), params={'param1': check_map} ),
+		
+		GoalState('go_building', gs_create_and_push_scheme, ('start_resting', 500),('end', 100)  ),
+		GoalState('start_resting', gs_push_scheme, ('end', 500),  params={'param1': 'ui_camp_rest',  } ),
+		
+		GoalState('end', gs_wait_cb, ('end', 100),  ),
+	])
+	return cs
+
+def create_ui_camp_rest_scheme():
 	cs = ControlScheme()
 	cs.__set_stages__(
 		[
@@ -804,6 +709,22 @@ def create_scheme_go_to_tile( loc ):
 
 def create_scheme_enter_building( loc, tgt_map_id = None ): #TODO
 	cs = ControlScheme()
+
+	def check_tgt_map(slot):
+		if tgt_map_id is None or tgt_map_id == -1:
+			return 1
+		if game.leader == OBJ_HANDLE_NULL:
+			return 0
+		if game.leader.map == tgt_map_id:
+			return 0
+		return 1
+		
+	cs.__set_stages__([
+		GoalState('start', gs_condition, ('go_building', 100), ('end', 100), params={'param1': check_tgt_map}),
+		GoalState('go_building', gs_create_and_push_scheme, ('map_change_loop', 500), params = {'param1': 'goto', 'param2': (create_scheme_go_to_tile, ( loc, ) ) }),
+		GoalState('map_change_loop', gs_condition_map_change, ('end', 500), ),
+		GoalState('end', gs_wait_cb, ('end', 500), ),
+	])
 	return cs
 
 def create_goto_area(area_name):
@@ -848,19 +769,6 @@ def create_goto_area(area_name):
 			return 1
 		return 0
 	
-	def map_change_check(slot):
-		#type: (GoalSlot)->int
-		state = slot.get_scheme_state()
-		if not 'map_change_check' in state:
-			print('map_change_check: initing with %s' % str(game.leader.map))
-			state['map_change_check'] = {'map': game.leader.map}
-			return 0
-		if state['map_change_check']['map'] != game.leader.map:
-			print('map_change_check: current %s is different than previous %s' % (str(game.leader.map), str(state['map_change_check']['map']) ))
-			return 1
-		print('map_change_check: no change %s' % ( str(state['map_change_check']['map']) ))
-		
-		return 0
 	
 	def gs_survival_check_active(slot):
 		wid = controller_ui_util.obtain_widget(WID_IDEN.RND_ENC_UI_ACCEPT_BTN)
@@ -897,7 +805,7 @@ def create_goto_area(area_name):
 			GoalState('press_acq_loc_btn', gs_press_widget, ('wait_loop', 200), (), {'param1': None } ),
 
 			GoalState('wait_loop', gs_wait_cb, ('wait_for_map_change', 500), ) ,	
-			GoalState('wait_for_map_change', gs_condition, ('end', 100), ('survival_check_window', 100),params={'param1': map_change_check} ) ,
+			GoalState('wait_for_map_change', gs_condition_map_change, ('end', 100), ('survival_check_window', 100), ) ,
 			GoalState('survival_check_window', gs_condition, ('press_encounter_accept', 100), ('wait_loop', 100), params={'param1': gs_survival_check_active} ) ,
 			GoalState('press_encounter_accept', gs_press_widget, ('end', 100), params={'param1':WID_IDEN.RND_ENC_UI_ACCEPT_BTN }),
 

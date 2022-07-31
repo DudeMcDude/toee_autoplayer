@@ -3,6 +3,8 @@ from toee import *
 from toee import game
 from controllers import GoalSlot
 from controller_ui_util import *
+import controller_ui_util
+import gamedialog as dlg
 
 #region utils
 debug_prints_en = True
@@ -65,6 +67,64 @@ def gs_press_key(slot):
 def gs_select_all(slot):
 	select_all()
 	return 1
+
+
+#region widget callbacks
+def gs_move_mouse_to_widget(slot):
+	# type: (GoalSlot)->int
+	'''param1 - widget identifier
+	scheme_state {'wid_id': TWidgetIdentifier}
+	'''
+	wid_identifier = slot.param1
+	
+	if wid_identifier is None:
+		scheme_state = slot.get_scheme_state()
+		if 'widget_scan' in scheme_state:
+			if 'wid_id' in scheme_state['widget_scan']:
+				wid_identifier = scheme_state['widget_scan']['wid_id']
+
+	wid = controller_ui_util.obtain_widget(wid_identifier)
+	if wid is None:
+		return 0
+	controller_ui_util.move_mouse_to_widget(wid)
+	return 1
+
+def gs_is_widget_visible(slot):
+	#type: (GoalSlot)->int
+	wid_identifier = slot.param1
+	wid = controller_ui_util.obtain_widget(wid_identifier)
+	if wid is None:
+		return 0
+	return 1
+
+def gs_press_widget(slot):
+	# type: (GoalSlot)->int
+	'''param1 - widget identifier
+	scheme_state { 'widget_scan': { 'wid_id': TWidgetIdentifier}
+				 }
+	'''
+	state = slot.state
+	if state is None:
+		slot.state = {
+			'hovered': False,
+			'clicked': False,
+		}
+	
+	if not slot.state['hovered']:
+		print('gs_press_widget: moving cursor')
+		result = gs_move_mouse_to_widget(slot) 
+		if result:
+			slot.state['hovered']=True
+			return 0
+		return 0
+		#todo handle failures...
+	if not slot.state['clicked']:
+		print('gs_press_widget: clicking')
+		click_mouse()
+		return 1
+	return 0
+
+#endregion widget callbacks
 
 
 def gs_scroll_to_tile(slot):
@@ -149,6 +209,27 @@ def gs_click_on_loc_nearest(slot):
 	return 0
 
 
+def gs_condition(slot):
+	# param1 - condition callback
+	cond_cb= slot.param1
+	if slot.state is None and slot.param2 is not None:
+		slot.state = dict(slot.param2)
+	if cond_cb(slot):
+		return 1
+	return 0
+
+def gs_condition_map_change(slot):
+		#type: (GoalSlot)->int
+		state = slot.get_scheme_state()
+		if not 'map_change_check' in state:
+			# print('map change check: initing with %s' % str(game.leader.map))
+			state['map_change_check'] = {'map': game.leader.map}
+			return 0
+		if state['map_change_check']['map'] != game.leader.map:
+			# print('map change check: current %s is different than previous %s' % (str(game.leader.map), str(state['map_change_check']['map']) ))
+			return 1
+		# print('map change check: no change %s' % ( str(state['map_change_check']['map']) ))
+		return 0
 
 def arrived_at(slot):
     # type: (GoalSlot)->int
@@ -174,6 +255,90 @@ def gs_arrive_at_tile(slot):
 		t_el = slot.get_cur_time() - slot.state['t0']
 		if t_el > RETRY_TIME:
 			slot.state = None # this will retry the click and scroll
+	return 0
+
+
+
+def dlg_reply(i):
+	print('Reply %d' % (i))
+	press_key(DIK_1 + i)
+	return
+
+def find_attack_lines(dlg_state):
+	#type: (dlg.DialogState)->list
+	attack_lines = []
+	N = dlg_state.reply_count
+	for i in range(N):
+		effect = dlg_state.get_reply_effect(i)
+		if effect.find('npc.attack') >= 0:
+			attack_lines.append(i)
+	return attack_lines
+
+
+def dlg_reply_nonattack(ds):
+	#type: (dlg.DialogState)-> int
+	# for now just select any non-attacking lines
+	attack_lines = find_attack_lines(ds)
+	for i in range(ds.reply_count):
+		if i in attack_lines:
+			continue
+		dlg_reply(i)
+		return 1
+	return 0
+
+def gs_handle_dialogue_prescripted(slot):
+	# print('gs_handle_dialogue_prescripted')
+	# goes through a pre-set reply specification:
+	# param1 is a list of replies (in linear sequence)
+	print('Disabling automatic dialogue handling')
+	Playtester.get_instance().dialog_handler_en(False) # halt the automatic dialogue handler
+
+	if slot.state is None:
+		slot.state = {
+			'was_in_dialog': False,
+			'reply_counter': 0,
+			'line_number': -1,
+			'wait_for_dialog_counter': 0
+			}
+		return 0
+
+	if dlg.is_engaged():
+		slot.state['was_in_dialog'] = True
+	else:
+		if slot.state['was_in_dialog']:
+			Playtester.get_instance().dialog_handler_en(True)
+			return 1
+		else:
+			slot.state['wait_for_dialog_counter'] += 1
+			return 0
+	
+	ds = dlg.get_current_state()
+	N = ds.reply_count
+	cur_line = ds.line_number
+	prev_line = slot.state['line_number']
+	if cur_line == prev_line:
+		print("Repeating the same line??")
+	slot.state['line_number'] = cur_line
+
+	replies = slot.param1
+	cur_idx = slot.state['reply_counter']
+	if cur_idx >= len(replies):
+		print("Reply script shorter than actual dialog! currently at ", cur_idx)
+		if dlg_reply_nonattack(ds):
+			return 0
+		dlg_reply(0)
+		return 0
+	
+	cur_reply = replies[cur_idx]
+	if cur_reply < N: # normal case
+		slot.state['reply_counter'] += 1
+		dlg_reply(cur_reply)
+		return 0
+	
+	# fallback
+	print("Warning: bad reply ID!")
+	slot.state['reply_counter'] += 1
+	dlg_reply(0)
 	return 0
 
 
@@ -370,12 +535,22 @@ def gs_create_and_push_scheme(slot):
 	#type: (GoalSlot)->int
 	'''param1 - id [str]\n
 		param2 - (callback, (args,...) )
+		alternative: (if none provided)
+		scheme_state {'push_scheme': {'id': str, 'callback': (callback, args ) }}
 	'''
-	create_cb, args = slot.param2
-	id        = slot.param1
 	
+	id        = slot.param1
+	if id is None:
+		state = slot.get_scheme_state()
+		if not 'push_scheme' in state:
+			raise Exception("gs_create_and_push_scheme: relying on scheme_state, but 'push_scheme' not inited!")
+		id = state['push_scheme']['id']
+		create_cb, args = state['push_scheme']['callback']
+	else:
+		create_cb, args = slot.param2
+
 	if slot.state is None:
-		print('gs_create_and_push_scheme: ', id, 'args:' , args)
+		print('gs_create_and_push_scheme: ID = %s args = %s' %(id, str(args)) )
 		cs = create_cb(*args)
 		slot.state = {}
 		
