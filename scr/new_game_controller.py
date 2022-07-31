@@ -19,37 +19,53 @@ def gs_master(slot):
 	pt = Playtester.get_instance()
 	if slot.state is None:
 		slot.state = {
-			'counter': 0
+			'counter': 0,
+			'rest_needed': False,
 		}
 	else:
 		# print('master counter: ', slot.state['counter'])
 		slot.state['counter'] += 1
 	
-	cheat_buff()
-		
-
 	if gs_is_main_menu(slot):
-		
-		pt.add_scheme( create_load_game_scheme(1), 'load_game' )
-		pt.push_scheme('load_game')
-		# pt.push_scheme('new_game')
-	elif slot.state['counter'] >= 1 and slot.state['counter'] <= 1000:
+		# pt.add_scheme( create_load_game_scheme(0), 'load_game' )
+		# pt.push_scheme('load_game')
+		pt.push_scheme('new_game')
+		return 0
+	
+	if slot.state['counter'] >= 1 and slot.state['counter'] <= 300000:
+		cheat_buff()
 		if game.quests[18].state != qs_completed:
 			pt.add_scheme( create_hommlet_scheme0(), 'hommlet0' )
 			pt.push_scheme('hommlet0')
-		elif game.quests[72].state == qs_unknown:
+			return 0
+		if game.quests[72].state == qs_unknown:
 			pt.add_scheme( create_hommlet_scheme1(), 'hommlet1' )
 			pt.push_scheme('hommlet1')
-		else:
-			leader = game.leader
-			if leader != OBJ_HANDLE_NULL:
-				game.areas[3] = 1 # nulb
-				if leader.map == 5001:
+			return 0
+		
+		leader = game.leader
+		if leader == OBJ_HANDLE_NULL:
+			return 0
+		
+		game.areas[3] = 1 # nulb
+		if leader.area == 1: # Hommlet
+			if leader.map == 5001: # Hommlet main
+				if slot.state['rest_needed']:
+					slot.state['rest_needed'] = False
 					pt.push_scheme('rest')
-					# pt.push_scheme('goto_nulb')
-				else: #elif leader.map == 5002:
 					return 0
-					pt.push_scheme('goto_hommlet')
+				pt.push_scheme('goto_nulb')
+				return 0
+			# inside building
+			pt.push_scheme('exit_building')
+			if game.random_range(0,6) == 1:
+				restup()
+			return 0
+		else: # outside Hommlet
+			slot.state['rest_needed'] = True
+			pt.push_scheme('goto_hommlet')
+			return 0
+		
 				
 	elif slot.state['counter'] == 2:
 		# pt.add_scheme( create_load_game_scheme(1), 'load_game' )
@@ -63,7 +79,7 @@ def gs_master(slot):
 def setup_playtester(autoplayer):
 	#type: (Playtester)->None
 	autoplayer = autoplayer #type: ControllerBase
-	autoplayer.__logging__ = True
+	# autoplayer.__logging__ = True
 	from controller_console import ControllerConsole
 	# autoplayer.console = ControllerConsole()
 	autoplayer.add_scheme( create_new_game_scheme(), 'new_game' )
@@ -78,7 +94,8 @@ def setup_playtester(autoplayer):
 	autoplayer.add_scheme( create_goto_area('moathouse'), 'goto_moathouse' )
 	autoplayer.add_scheme( create_goto_area('south hommlet'), 'goto_hommlet' )
 	autoplayer.add_scheme( create_goto_area('nulb'), 'goto_nulb' )
-					
+	autoplayer.add_scheme( create_scheme_enter_building(None), 'exit_building' )
+	
 	autoplayer.set_dialog_handler(dialog_handler)
 	autoplayer.set_combat_handler(combat_handler)
 	
@@ -272,7 +289,7 @@ def combat_handler(slot):
 
 	if obj.is_performing():
 		return 500
-	restup()
+	# restup()
 	if True: #obj == game.party[1]: # ariel
 		result = obj.ai_strategy_execute(tgt)
 		if result == 1:
@@ -529,6 +546,8 @@ def create_new_game_scheme():
 			GoalState('', gs_create_and_push_scheme, ('', 300), params={'param1': 'party_pool_add_pc', 'param2': (create_party_pool_add_pc_scheme, () )}),
 			GoalState('', gs_create_and_push_scheme, ('', 300), params={'param1': 'party_pool_add_pc', 'param2': (create_party_pool_add_pc_scheme, () )}),
 			GoalState('', gs_create_and_push_scheme, ('', 300), params={'param1': 'party_pool_add_pc', 'param2': (create_party_pool_add_pc_scheme, () )}),
+			GoalState('', gs_create_and_push_scheme, ('', 300), params={'param1': 'party_pool_add_pc', 'param2': (create_party_pool_add_pc_scheme, () )}),
+			GoalState('', gs_create_and_push_scheme, ('', 300), params={'param1': 'party_pool_add_pc', 'param2': (create_party_pool_add_pc_scheme, () )}),
 			GoalState('', gs_create_and_push_scheme, ('', 300), params={'param1': 'party_pool_add_pc', 'param2': (create_party_pool_add_pc_scheme, () )})
 		], ('char_pool_begin_adventure', 300), ('char_pool_begin_adventure', 300))
 		+[
@@ -603,7 +622,7 @@ def create_true_neutral_scheme():
 	return cs
 
 def create_rest_scheme():
-	WELCOME_WENCH_MAP_ID = 5007; WELCOME_WENCH_DOOR_ICON_LOC = (617, 395)
+	WELCOME_WENCH_MAP_ID = 5007; WELCOME_WENCH_ENTRANCE_LOC = (619, 404)
 	def init_rest_scheme(slot):
 		#type: (GoalSlot)->int
 		state =slot.get_scheme_state()
@@ -611,7 +630,7 @@ def create_rest_scheme():
 		loc = (500,500)
 		tgt_map_id = -1
 		if game.leader.map == 5001: # Hommlet
-			loc        = WELCOME_WENCH_DOOR_ICON_LOC
+			loc        = WELCOME_WENCH_ENTRANCE_LOC
 			tgt_map_id = WELCOME_WENCH_MAP_ID
 
 		args = ( loc, tgt_map_id )
@@ -709,7 +728,7 @@ def create_scheme_go_to_tile( loc ):
 
 def create_scheme_enter_building( loc, tgt_map_id = None ): #TODO
 	cs = ControlScheme()
-
+	DOOR_ICON_PROTO = 2011
 	def check_tgt_map(slot):
 		if tgt_map_id is None or tgt_map_id == -1:
 			return 1
@@ -718,13 +737,24 @@ def create_scheme_enter_building( loc, tgt_map_id = None ): #TODO
 		if game.leader.map == tgt_map_id:
 			return 0
 		return 1
-		
-	cs.__set_stages__([
-		GoalState('start', gs_condition, ('go_building', 100), ('end', 100), params={'param1': check_tgt_map}),
-		GoalState('go_building', gs_create_and_push_scheme, ('map_change_loop', 500), params = {'param1': 'goto', 'param2': (create_scheme_go_to_tile, ( loc, ) ) }),
-		GoalState('map_change_loop', gs_condition_map_change, ('end', 500), ),
-		GoalState('end', gs_wait_cb, ('end', 500), ),
-	])
+	if loc is None:
+		cs.__set_stages__([
+			GoalState('start', gs_condition, ('click_door_icon', 100), ('end', 100), params={'param1': check_tgt_map}),
+			# GoalState('go_to_loc', gs_create_and_push_scheme, ('click_door_icon', 500), params = {'param1': 'goto', 'param2': (create_scheme_go_to_tile, ( loc, ) ) }),
+			GoalState('click_door_icon', gs_click_on_object, ('map_change_loop', 100), params={'param1': {'proto': DOOR_ICON_PROTO} }),
+			
+			GoalState('map_change_loop', gs_condition_map_change, ('end', 500), ),
+			GoalState('end', gs_wait_cb, ('end', 500), ),	
+		])
+	else:
+		cs.__set_stages__([
+			GoalState('start', gs_condition, ('go_to_loc', 100), ('end', 100), params={'param1': check_tgt_map}),
+			GoalState('go_to_loc', gs_create_and_push_scheme, ('click_door_icon', 500), params = {'param1': 'goto', 'param2': (create_scheme_go_to_tile, ( loc, ) ) }),
+			GoalState('click_door_icon', gs_click_on_object, ('map_change_loop', 100), params={'param1': {'proto': DOOR_ICON_PROTO, 'loc': loc} }),
+			
+			GoalState('map_change_loop', gs_condition_map_change, ('end', 500), ),
+			GoalState('end', gs_wait_cb, ('end', 500), ),
+		])
 	return cs
 
 def create_goto_area(area_name):
@@ -816,6 +846,7 @@ def create_goto_area(area_name):
 def create_hommlet_scheme1():
 	cs = ControlScheme()
 	JAROO_DOOR_ICON_LOC = (614, 518)
+	GROVE_ENTRANCE_LOC = (620, 520)
 	JAROO_EXIT_ICON_LOC = (495, 478)
 
 	def jaroo_handler(ds, presets, slot):
@@ -847,14 +878,12 @@ def create_hommlet_scheme1():
 
 	cs.__set_stages__(
 		[
-		GoalState('start', gs_condition, ('go_jaroo', 100), ('handle_jaroo', 100), params={'param1': lambda slot: game.leader.map == 5001}),
+		GoalState('start', gs_condition, ('go_jaroo', 100), ('start2', 100), params={'param1': lambda slot: game.leader.map == 5001}),
+		GoalState('start2', gs_condition, ('handle_jaroo', 100), ('start', 100), params={'param1': lambda slot: game.leader.map == 5042}), # wait until this is fulfilled
+		
+		GoalState('go_jaroo', gs_create_and_push_scheme, ('handle_jaroo', 100), params={'param1': 'go_grove', 'param2': (create_scheme_enter_building, (GROVE_ENTRANCE_LOC,5042) ) })
 		] +
-		GoalState.from_sequence('go_jaroo', [
-			GoalState('', gs_create_and_push_scheme, ('', 500), params = {'param1': 'goto', 'param2': (create_scheme_go_to_tile, ( (620, 520), ) ) }),
-			GoalState('', gs_scroll_to_tile_and_click, ('', 500), params = {'param1': JAROO_DOOR_ICON_LOC }),
-			GoalState('', gs_condition, ('', 500), params = {'param1': lambda slot: game.leader.map == 5042 }),	
-		], ('handle_jaroo', 500)) +
-
+		
 		GoalState.from_sequence('handle_jaroo', [
 			GoalState('', gs_click_to_talk, ('', 1500), params = {'param1': {'proto': 14005}} ), # Jaroo
 			GoalState('', gs_handle_dialogue, ('', 500), (), {'param1': jaroo_handler, 'param2': {318: 0, 323: 1, } } ), # Jaroo
@@ -872,6 +901,7 @@ def create_hommlet_scheme1():
 def create_hommlet_scheme0():
 	cs = ControlScheme()
 	WENCH_DOOR_ICON_LOC = (617, 395)
+	WENCH_DOOR_ENTRANCE_LOC = (619, 405)
 	WENCH_EXIT_ICON_LOC = (486, 488)
 	
 	def furnok_dlg_handler(ds, presets, state):
@@ -889,12 +919,14 @@ def create_hommlet_scheme0():
 	cs.__set_stages__( 
 		[
 		GoalState('start', gs_condition, ('go_inn', 100), ('handle_inn', 100), params={'param1': lambda slot: game.leader.map == 5001}),
+		GoalState('go_inn', gs_create_and_push_scheme, ('handle_inn', 100), params={'param1': 'go_wench', 'param2': (create_scheme_enter_building, (WENCH_DOOR_ENTRANCE_LOC, 5007) )}),
 		] +
-		GoalState.from_sequence('go_inn', [
-			GoalState('', gs_create_and_push_scheme, ('', 500), params = {'param1': 'goto', 'param2': (create_scheme_go_to_tile, ( (619, 405), ) ) }),
-			GoalState('', gs_scroll_to_tile_and_click, ('', 500), params = {'param1': WENCH_DOOR_ICON_LOC }),
-			GoalState('', gs_condition, ('', 500), params = {'param1': lambda slot: game.leader.map == 5007 }),	
-		], ('handle_inn', 500)) + 
+		
+		# GoalState.from_sequence('go_inn', [
+		# 	GoalState('', gs_create_and_push_scheme, ('', 500), params = {'param1': 'goto', 'param2': (create_scheme_go_to_tile, ( (619, 405), ) ) }),
+		# 	GoalState('', gs_scroll_to_tile_and_click, ('', 500), params = {'param1': WENCH_DOOR_ICON_LOC }),
+		# 	GoalState('', gs_condition, ('', 500), params = {'param1': lambda slot: game.leader.map == 5007 }),	
+		# ], ('handle_inn', 500)) + 
 
 		GoalState.from_sequence('handle_inn', [
 			GoalState('', gs_click_to_talk, ('', 1500), params = {'param1': {'proto': 14016}} ), # Ostler

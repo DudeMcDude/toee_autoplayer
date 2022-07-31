@@ -380,7 +380,7 @@ class ControllerBase:
             prev_entry = slot.goal_stack[0]
             print('pop_scheme: going back to ' + str(prev_entry.scheme_id))
             self.__cur_scheme_instance__ = prev_entry
-            self.set_active_scheme(prev_entry.scheme_id) #, entry_popped.state_save)
+            self.set_active_scheme(prev_entry.scheme_id, entry_popped.state_save)
         else:
             self.__cur_scheme_instance__ = None
         return

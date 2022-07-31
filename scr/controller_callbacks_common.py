@@ -25,12 +25,18 @@ def get_object(obj_identifier):
 		loc = game.leader.location
 		if obj_identifier.get('location'):
 			loc = obj_identifier['location']
-		obj_list = game.obj_list_vicinity(loc, OLC_ALL)
+		obj_type = OLC_ALL
+		if obj_identifier.get('obj_t'):
+			obj_type = obj_identifier['obj_t']
+		
+		obj_list = game.obj_list_vicinity(loc, obj_type)
 		if obj_identifier.get('proto'):
 			proto_id = obj_identifier['proto']
 			obj_list = [x for x in obj_list if x.proto == proto_id]
 		if len(obj_list) == 0:
 			return OBJ_HANDLE_NULL
+		# get closest one
+		obj_list.sort(key = lambda x: x.distance_to(loc))
 		return obj_list[0]
 	return OBJ_HANDLE_NULL
 
@@ -288,9 +294,12 @@ def dlg_reply_nonattack(ds):
 
 def gs_handle_dialogue_prescripted(slot):
 	# print('gs_handle_dialogue_prescripted')
-	# goes through a pre-set reply specification:
-	# param1 is a list of replies (in linear sequence)
-	print('Disabling automatic dialogue handling')
+	'''
+	goes through a pre-set reply specification:
+	* param1: a list of replies (in linear sequence)
+	'''
+	
+	# print('Disabling automatic dialogue handling')
 	Playtester.get_instance().dialog_handler_en(False) # halt the automatic dialogue handler
 
 	if slot.state is None:
