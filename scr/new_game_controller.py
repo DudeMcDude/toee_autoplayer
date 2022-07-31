@@ -922,12 +922,6 @@ def create_hommlet_scheme0():
 		GoalState('go_inn', gs_create_and_push_scheme, ('handle_inn', 100), params={'param1': 'go_wench', 'param2': (create_scheme_enter_building, (WENCH_DOOR_ENTRANCE_LOC, 5007) )}),
 		] +
 		
-		# GoalState.from_sequence('go_inn', [
-		# 	GoalState('', gs_create_and_push_scheme, ('', 500), params = {'param1': 'goto', 'param2': (create_scheme_go_to_tile, ( (619, 405), ) ) }),
-		# 	GoalState('', gs_scroll_to_tile_and_click, ('', 500), params = {'param1': WENCH_DOOR_ICON_LOC }),
-		# 	GoalState('', gs_condition, ('', 500), params = {'param1': lambda slot: game.leader.map == 5007 }),	
-		# ], ('handle_inn', 500)) + 
-
 		GoalState.from_sequence('handle_inn', [
 			GoalState('', gs_click_to_talk, ('', 1500), params = {'param1': {'proto': 14016}} ), # Ostler
 			GoalState('', gs_handle_dialogue_prescripted, ('', 1500), (), {'param1': [0,1,0,0,0,0,0] } ), 
