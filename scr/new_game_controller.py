@@ -708,6 +708,8 @@ def create_scheme_go_to_tile( loc ):
 	def arrived_at_check(slot):
 		DIST_THRESHOLD = 15
 		for pc in game.party:
+			if pc.is_unconscious():
+				continue
 			if pc.distance_to(loc) > DIST_THRESHOLD:
 				return False
 		return True
