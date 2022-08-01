@@ -848,7 +848,7 @@ def create_goto_area(area_name):
 def create_hommlet_scheme1():
 	cs = ControlScheme()
 	JAROO_DOOR_ICON_LOC = (614, 518)
-	GROVE_ENTRANCE_LOC = (620, 520)
+	GROVE_ENTRANCE_LOC = (625, 520)
 	JAROO_EXIT_ICON_LOC = (495, 478)
 
 	def jaroo_handler(ds, presets, slot):
