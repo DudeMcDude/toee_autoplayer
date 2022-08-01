@@ -1,18 +1,22 @@
 from controller_ui_util import WID_IDEN
 from toee import *
+from toee import PySpellStore, game
 from controllers import ControlScheme, GoalState, ControllerBase
 from controller_callbacks_common import *
 from utilities import *
 import autoui as aui
 import controller_ui_util
+import tpdp
 import gamedialog as dlg
+
+PLAYTEST_EN = True
 
 def cheat_buff():
 	if game.leader != OBJ_HANDLE_NULL: # make us durable!!!
 		for pc in game.party:
-			if pc.obj_get_int(obj_f_hp_pts) < 500:
-				pc.obj_set_int(obj_f_hp_pts, 500)
-				pc.stat_base_set(stat_strength,32)
+			if pc.obj_get_int(obj_f_hp_pts) < 100:
+				pc.obj_set_int(obj_f_hp_pts, 100)
+				pc.stat_base_set(stat_strength,28)
 	return
 
 def gs_master(slot):
@@ -26,10 +30,11 @@ def gs_master(slot):
 		# print('master counter: ', slot.state['counter'])
 		slot.state['counter'] += 1
 	
+	
 	if gs_is_main_menu(slot):
-		# pt.add_scheme( create_load_game_scheme(0), 'load_game' )
-		# pt.push_scheme('load_game')
-		pt.push_scheme('new_game')
+		pt.add_scheme( create_load_game_scheme(0), 'load_game' )
+		pt.push_scheme('load_game')
+		# pt.push_scheme('new_game')
 		return 0
 	
 	if slot.state['counter'] >= 1 and slot.state['counter'] <= 300000:
@@ -48,6 +53,7 @@ def gs_master(slot):
 			return 0
 		
 		game.areas[3] = 1 # nulb
+		game.areas[4] = 1 # ToEE
 		if leader.area == 1: # Hommlet
 			if leader.map == 5001: # Hommlet main
 				if slot.state['rest_needed']:
@@ -101,7 +107,8 @@ def setup_playtester(autoplayer):
 	
 	autoplayer.push_scheme('main')
 	print('Beginning scheme in 1 sec...')
-	autoplayer.schedule(1000, real_time=1)
+	if PLAYTEST_EN:
+		autoplayer.schedule(1000, real_time=1)
 	return
 
 def create_master_scheme():
@@ -271,6 +278,29 @@ def combat_handler(slot):
 	if not (obj in game.party):
 		return 500
 	
+
+	def obj_is_caster(obj):
+		#type: (PyObjHandle)->bool
+		res = len(obj.spells_known) > 0
+		return res
+
+	def is_out_of_ammo(obj):
+		if obj.item_worn_at(item_wear_ammo) == OBJ_HANDLE_NULL:
+			return True
+		# todo check matching weapon...
+		return False
+	def is_ranged_weapon(weap):
+		#type: (PyObjHandle)->int
+		if weap == OBJ_HANDLE_NULL:
+			return 0
+		weap_flags = weap.obj_get_int(obj_f_weapon_flags)
+		if not (weap_flags & OWF_RANGED_WEAPON):
+			return 0
+		return 1
+	def obj_has_ranged_weapon(attachee):
+		weap = attachee.item_worn_at(3)
+		return is_ranged_weapon(weap)
+	
 	def can_cast(spell_enum, spell_class, spell_level):
 		sp = PySpellStore( spell_enum , spell_class, spell_level)
 		return obj.can_cast_spell(sp)
@@ -289,6 +319,57 @@ def combat_handler(slot):
 
 	if obj.is_performing():
 		return 500
+	is_caster = obj_is_caster(obj)
+	has_ranged = obj_has_ranged_weapon(obj)
+
+	
+	if is_caster:
+		# try cast
+		if act_seq_cur.tb_status.hourglass_state >= 4: # Full action bar
+			spells_known = obj.spells_known
+			castable_offensive = []
+			castable_defensive = []
+			castable_buffs     = []
+			castable_personal  = []
+			castable_count = 0
+			for spell in spells_known:
+				sp_entry = tpdp.SpellEntry(spell.spell_enum)
+				is_offensive = ( sp_entry.ai_spell_type & (1 << 1) ) != 0
+				spell_range = sp_entry.get_spell_range_exact(spell.spell_level, obj)
+				if not can_cast(spell.spell_enum, spell.spell_class, spell.spell_level):
+					continue
+				
+				if is_offensive:
+					if obj.distance_to(tgt) > spell_range:
+						continue
+					castable_count += 1
+					castable_offensive.append(spell)
+				elif sp_entry.spellRangeType == tpdp.SpellRangeType.SRT_Personal:
+					castable_personal.append(spell)
+					castable_count += 1
+			castable_count = len(castable_personal) + len(castable_offensive)
+			
+			offensive_chance = 100
+			defensive_chance = 100 - offensive_chance
+			will_cast_offensive = len(castable_offensive) > 0
+			if will_cast_offensive:
+				idx = game.random_range(0, len(castable_offensive))
+				spell = castable_offensive[idx]
+				obj.cast_spell(spell.spell_enum, tgt)
+				return 1000
+			
+		# no spells can cast / out of time
+		if has_ranged and is_out_of_ammo(obj):
+			press_space()
+			pass # todo: unequip ranged weapon, go melee?
+			return 300
+	else:
+		if has_ranged and is_out_of_ammo(obj):
+			press_space()
+			pass # todo: unequip ranged weapon, go melee?
+			return 300
+				
+			
 	# restup()
 	if True: #obj == game.party[1]: # ariel
 		result = obj.ai_strategy_execute(tgt)
