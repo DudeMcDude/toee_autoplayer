@@ -218,8 +218,7 @@ def gs_click_on_loc_nearest(slot):
 def gs_condition(slot):
 	# param1 - condition callback
 	cond_cb= slot.param1
-	if slot.state is None and slot.param2 is not None:
-		slot.state = dict(slot.param2)
+	
 	if cond_cb(slot):
 		return 1
 	return 0

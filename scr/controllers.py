@@ -92,6 +92,17 @@ class GoalState(GoalStateCb):
             result.append(state)
         return result
 
+class GoalStateCondition(GoalState):
+    def __init__(self, id, condition_cb, after_s, after_f):    
+        GoalState.__init__(self, id, lambda slot: condition_cb(slot) != 0, after_s, after_f,  )
+        return
+
+class GoalStateCreatePushScheme(GoalState):
+    def __init__(self, id, scheme_id, scheme_generator, args, after_s ):
+        import controller_callbacks_common
+        GoalState.__init__(self, id, controller_callbacks_common.gs_create_and_push_scheme, after_s, None, params={'param1': scheme_id, 'param2': (scheme_generator, args)})
+        return
+
 class GoalStackEntry:
     scheme_id = None #type: str
     scheme = None
@@ -319,11 +330,27 @@ class ControllerBase:
     __dialog_handler_en__ = True
 
     __combat_handler__ = lambda slot: 1
+    __combat_mode__ = False
     
+    __active__ = True
     
     def __init__(self):
         self.__goal_slot__ = GoalSlot()
         return
+
+    def set_active(self, value):
+        will_execute = False
+        if self.__active__ == False and value == True:
+            print('activating controller')
+            will_execute = True
+            # self.schedule(300) # runs the base class..
+        
+        self.__active__ = value
+        if will_execute:
+            self.execute()
+        return
+    def is_active(self):
+        return self.__active__
 
     def add_scheme(self, scheme, scheme_id):
         # type: (ControlScheme, int)->None
@@ -349,6 +376,9 @@ class ControllerBase:
 
     def set_combat_handler(self, cb):
         self.__combat_handler__ = cb
+        return
+    def combat_mode_set(self, value):
+        self.__combat_mode__ = value
         return
 
     def push_scheme(self, scheme_id):
@@ -378,7 +408,8 @@ class ControllerBase:
 
         if len(slot.goal_stack) > 0:
             prev_entry = slot.goal_stack[0]
-            print('pop_scheme: going back to ' + str(prev_entry.scheme_id))
+            if self.__logging__:
+                print('pop_scheme: going back to ' + str(prev_entry.scheme_id))
             self.__cur_scheme_instance__ = prev_entry
             self.set_active_scheme(prev_entry.scheme_id, entry_popped.state_save)
         else:
@@ -386,6 +417,7 @@ class ControllerBase:
         return
 
     def interrupt(self):
+        print('Controller: Interrupt!')
         slot = self.__goal_slot__
         if len(slot.goal_stack) > 1:
             self.pop_scheme()
@@ -409,6 +441,9 @@ class ControllerBase:
 
     def execute(self):
         # print('Controller execute()')
+        if not self.__active__:
+            return
+        
         scheme_inst = self.get_cur_scheme_instance()
         self.log_execution(scheme_inst)
         
@@ -426,18 +461,29 @@ class ControllerBase:
             slot.__dialog_state__ = None
 
         if game.combat_is_active():
-            self.__was_in_combat__ = True
-            
-            delay = self.__combat_handler__(slot)
-            if delay > 0:
-                return self.schedule(delay)
-            else:
+            if not self.__combat_mode__:
+                # self.interrupt()
+                self.__combat_handler__(slot) # in charge of creating / pushing a scheme..
+                self.combat_mode_set(True)
                 return self.schedule(100)
+        else:
+            self.combat_mode_set(False)
+        
+            
+            # delay = self.__combat_handler__(slot)
+            # if delay > 0:
+            #     return self.schedule(delay)
+            # else:
+            #     return self.schedule(100)
 
         result = scheme_inst.execute(slot)
+        if self.__logging__:
+            print('  execute() result: %s' % str(result))
 
         if self.get_cur_scheme() != scheme_inst.scheme: # don't advance the stage yet since we've started a new one (or resumed a previous one)
             #TODO: handle same scheme, but in different instances?
+            if self.__logging__:
+                print('Controller: scheme changed')
             self.schedule(100)
             return
 
