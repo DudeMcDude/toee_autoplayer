@@ -1,7 +1,7 @@
 from controller_ui_util import WID_IDEN
 from toee import *
 from toee import PySpellStore, game
-from controllers import ControlScheme, GoalState, ControllerBase
+from controllers import ControlScheme, GoalState, ControllerBase, GoalStateCondition, GoalStateCreatePushScheme
 from controller_callbacks_common import *
 from utilities import *
 import autoui as aui
@@ -32,7 +32,7 @@ def gs_master(slot):
 	
 	
 	if gs_is_main_menu(slot):
-		pt.add_scheme( create_load_game_scheme(0), 'load_game' )
+		pt.add_scheme( create_load_game_scheme(1), 'load_game' )
 		pt.push_scheme('load_game')
 		# pt.push_scheme('new_game')
 		return 0
@@ -60,7 +60,10 @@ def gs_master(slot):
 					slot.state['rest_needed'] = False
 					pt.push_scheme('rest')
 					return 0
-				pt.push_scheme('goto_nulb')
+				# random_schemes = ['goto_nulb', 'goto_brigand_tower']
+				random_schemes = [ 'goto_brigand_tower']
+				random_choice  = game.random_range(0, len(random_schemes)-1)
+				pt.push_scheme(random_schemes[random_choice])
 				return 0
 			# inside building
 			pt.push_scheme('exit_building')
@@ -85,21 +88,25 @@ def gs_master(slot):
 def setup_playtester(autoplayer):
 	#type: (Playtester)->None
 	autoplayer = autoplayer #type: ControllerBase
-	# autoplayer.__logging__ = True
+	autoplayer.__logging__ = True
 	from controller_console import ControllerConsole
-	# autoplayer.console = ControllerConsole()
+	autoplayer.console = ControllerConsole()
 	autoplayer.add_scheme( create_new_game_scheme(), 'new_game' )
 	autoplayer.add_scheme( create_load_game_scheme(), 'load_game' )
 	autoplayer.add_scheme( create_true_neutral_scheme(), 'true_neutral_vig' )
 	autoplayer.add_scheme( create_hommlet_scheme0(), 'hommlet0')
 	autoplayer.add_scheme( create_ui_camp_rest_scheme(), 'ui_camp_rest' )
+	autoplayer.add_scheme( create_open_worldmap(), 'open_worldmap')
 	autoplayer.add_scheme( create_rest_scheme(), 'rest' )
 
 	autoplayer.add_scheme( create_shop_map_scheme(), 'shopmap' )
 	autoplayer.add_scheme( create_master_scheme(), 'main' )
 	autoplayer.add_scheme( create_goto_area('moathouse'), 'goto_moathouse' )
 	autoplayer.add_scheme( create_goto_area('south hommlet'), 'goto_hommlet' )
-	autoplayer.add_scheme( create_goto_area('nulb'), 'goto_nulb' )
+	autoplayer.add_scheme( create_goto_area('nulb', 3), 'goto_nulb' )
+	autoplayer.add_scheme( create_goto_area('Temple of Elemental Evil', 4), 'goto_temple' )
+	autoplayer.add_scheme( create_brigand_tower_scheme(), 'goto_brigand_tower' )
+	
 	autoplayer.add_scheme( create_scheme_enter_building(None), 'exit_building' )
 	
 	autoplayer.set_dialog_handler(dialog_handler)
@@ -107,8 +114,11 @@ def setup_playtester(autoplayer):
 	
 	autoplayer.push_scheme('main')
 	print('Beginning scheme in 1 sec...')
+	# autoplayer.set_active(False)
 	if PLAYTEST_EN:
-		autoplayer.schedule(1000, real_time=1)
+		# autoplayer.set_active(True)
+		autoplayer.schedule(700)
+
 	return
 
 def create_master_scheme():
@@ -210,8 +220,9 @@ class DialogHandler:
 
 dialog_handler_dict = {
 	91: DialogHandler( {1: 0, 10: 0, 20: 1, 50: 0, 60: 0, 70:0 , 580: 1,}), # Elmo
+	121: DialogHandler( {1: 0, 30:1, 40: 1} ), # Tower Sentinel
 	228: DialogHandler([0,0,0,0,0,0,0]), # kent
-
+	302: DialogHandler( {66: 0, 68: 0, 70: 0, 166: 0, 168: 0, 170: 0, }),
 	416: DialogHandler([0,0,1]) # std equipment chest
 }
 
@@ -236,8 +247,37 @@ def dialog_handler(slot):
 	return handler.cb(ds, handler.presets, slot)
 
 def combat_handler(slot):
+	#type: (GoalSlot)->None
+	cs = ControlScheme()
+	def gs_combat_init(slot):
+		if game.combat_is_active():
+			return 1
+		return 0
+
+	def gs_combat_action_handler(slot):
+		if not game.combat_is_active():
+			return 0
+		combat_action_handler(slot)
+		return 1
+
+	def gs_combat_end(slot):
+		Playtester.get_instance().combat_mode_set(False)
+		return 1
 	
-	Playtester.get_instance().interrupt()
+	cs.__set_stages__([
+		GoalState('start',gs_combat_init, ('combat_loop', 100), ('end', 100),  ),
+		GoalState('combat_loop', gs_combat_action_handler, ('combat_loop', 100), ('end', 100),  ),
+		GoalState('end',gs_combat_end, ('end', 100),   ),
+	])
+	id = 'handle_combat'
+	Playtester.get_instance().add_scheme(cs, id)
+	Playtester.get_instance().push_scheme(id)
+	return
+
+
+def combat_action_handler(slot):
+	
+	# Playtester.get_instance().interrupt()
 
 	def select_target(obj):
 		vlist = game.obj_list_vicinity(obj.location, OLC_NPC)
@@ -277,7 +317,7 @@ def combat_handler(slot):
 		return 500
 	if not (obj in game.party):
 		return 500
-	
+	# TODO charmed/confused PC.. 
 
 	def obj_is_caster(obj):
 		#type: (PyObjHandle)->bool
@@ -303,7 +343,13 @@ def combat_handler(slot):
 	
 	def can_cast(spell_enum, spell_class, spell_level):
 		sp = PySpellStore( spell_enum , spell_class, spell_level)
-		return obj.can_cast_spell(sp)
+		result = obj.can_cast_spell(sp)
+		if not result:
+			return False
+		if sp.is_naturally_cast():
+			if not obj.spontaneous_spells_remaining(sp.spell_class, sp.spell_level): # TODO this disregard that sorcs can cast at a higher level..
+				return False
+		return True
 
 	import tpactions
 	actor = tpactions.get_current_tb_actor()
@@ -353,7 +399,7 @@ def combat_handler(slot):
 			defensive_chance = 100 - offensive_chance
 			will_cast_offensive = len(castable_offensive) > 0
 			if will_cast_offensive:
-				idx = game.random_range(0, len(castable_offensive))
+				idx = game.random_range(0, len(castable_offensive)-1)
 				spell = castable_offensive[idx]
 				obj.cast_spell(spell.spell_enum, tgt)
 				return 1000
@@ -629,6 +675,7 @@ def create_new_game_scheme():
 			GoalState('', gs_create_and_push_scheme, ('', 300), params={'param1': 'party_pool_add_pc', 'param2': (create_party_pool_add_pc_scheme, () )}),
 			GoalState('', gs_create_and_push_scheme, ('', 300), params={'param1': 'party_pool_add_pc', 'param2': (create_party_pool_add_pc_scheme, () )}),
 			GoalState('', gs_create_and_push_scheme, ('', 300), params={'param1': 'party_pool_add_pc', 'param2': (create_party_pool_add_pc_scheme, () )}),
+			GoalState('', gs_create_and_push_scheme, ('', 300), params={'param1': 'party_pool_add_pc', 'param2': (create_party_pool_add_pc_scheme, () )}),
 			GoalState('', gs_create_and_push_scheme, ('', 300), params={'param1': 'party_pool_add_pc', 'param2': (create_party_pool_add_pc_scheme, () )})
 		], ('char_pool_begin_adventure', 300), ('char_pool_begin_adventure', 300))
 		+[
@@ -840,8 +887,35 @@ def create_scheme_enter_building( loc, tgt_map_id = None ): #TODO
 		])
 	return cs
 
-def create_goto_area(area_name):
-	#type: (str)->ControlScheme
+def create_open_worldmap():
+	cs = ControlScheme()
+	def gs_encounter_exit_dialog_active(slot):
+		wid = controller_ui_util.obtain_widget(WID_IDEN.RND_ENC_EXIT_UI_ACCEPT_BTN)
+		if wid is None:
+			return 0
+		return 1
+	cs.__set_stages__([
+		# check if already there
+		GoalState('start', gs_is_widget_visible, ('end', 100), ('is_townmap_ui', 100), params={'param1': WID_IDEN.WORLDMAP_UI_SELECTION_BTNS[0]} ),
+		# no, so check if the townmap ui is active
+		GoalState('is_townmap_ui', gs_is_widget_visible, ('press_worldmap', 100), ('click_utilitybar_map', 100), params={'param1': WID_IDEN.TOWNMAP_UI_WORLD_BTN} ) ,
+		
+		# if neither, click the map button in the toolbar,
+		GoalState('click_utilitybar_map', gs_press_widget, ('exiting_random_encounter_check', 500), (), {'param1': WID_IDEN.UTIL_BAR_MAP_BTN } ),
+		
+		# check dialogue for exiting random encounter
+		GoalState('exiting_random_encounter_check', gs_condition, ('press_encounter_exit', 100), ('is_townmap_ui2', 100), params={'param1':gs_encounter_exit_dialog_active }),
+		GoalState('press_encounter_exit', gs_press_widget, ('is_townmap_ui2', 100), params={'param1':WID_IDEN.RND_ENC_EXIT_UI_ACCEPT_BTN }),
+		
+		GoalState('is_townmap_ui2', gs_is_widget_visible, ('press_worldmap', 500), ('end', 100), params={'param1': WID_IDEN.TOWNMAP_UI_WORLD_BTN} ) ,
+		
+		GoalState('press_worldmap', gs_press_widget, ('end', 300), (), {'param1': WID_IDEN.TOWNMAP_UI_WORLD_BTN } ),
+		GoalState('end', gs_wait_cb, ('end', 100))
+	])
+	return cs
+
+def create_goto_area(area_name, area_id = None):
+	#type: (str, int)->ControlScheme
 
 	# TODO: handle if not outdoors... (seek exit or sthg like that)
 	# TODO: what if we're already there? currently handle this above...
@@ -888,11 +962,7 @@ def create_goto_area(area_name):
 		if wid is None:
 			return 0
 		return 1
-	def gs_encounter_exit_dialog_active(slot):
-		wid = controller_ui_util.obtain_widget(WID_IDEN.RND_ENC_EXIT_UI_ACCEPT_BTN)
-		if wid is None:
-			return 0
-		return 1
+	
 	def gs_is_townmap_active(slot):
 		wid = controller_ui_util.obtain_widget(WID_IDEN.TOWNMAP_UI_WORLD_BTN)
 		if wid is None:
@@ -903,28 +973,28 @@ def create_goto_area(area_name):
 	cs.__set_stages__(
 		[
 			GoalState('start', gs_goto_area_init, ('check_outdoors',100 ), ),
-			GoalState('check_outdoors', gs_condition, ('click_map', 500), ('end', 100), params={'param1': lambda slot: game.is_outdoor()} ) ,
+			GoalState('check_outdoors', gs_condition, ('open_worldmap', 500), ('end', 100), params={'param1': lambda slot: game.is_outdoor()} ) ,
 		
-			GoalState('click_map', gs_press_widget, ('exiting_random_encounter_check', 500), (), {'param1': WID_IDEN.UTIL_BAR_MAP_BTN } ),
-			GoalState('exiting_random_encounter_check', gs_condition, ('press_encounter_exit', 100), ('is_townmap_ui', 100), params={'param1':gs_encounter_exit_dialog_active }),
-			GoalState('press_encounter_exit', gs_press_widget, ('is_townmap_ui', 100), params={'param1':WID_IDEN.RND_ENC_EXIT_UI_ACCEPT_BTN }),
-			
-			GoalState('is_townmap_ui', gs_condition, ('press_worldmap', 500), ('find_acq_loc_btn', 100), params={'param1': gs_is_townmap_active} ) ,
-			GoalState('press_worldmap', gs_press_widget, ('find_acq_loc_btn', 600), (), {'param1': WID_IDEN.TOWNMAP_UI_WORLD_BTN } ),
-
+			GoalState('open_worldmap', gs_push_scheme, ('find_acq_loc_btn', 100), params={'param1': 'open_worldmap'}),
 		
 			GoalState('find_acq_loc_btn', gs_scan_get_widget_from_list, ('check_result', 100), (), {'param1': wid_list, 'param2': check_widget } ),
 			GoalState('check_result', gs_found, ('press_acq_loc_btn', 100), ('end', 300),  ),
 			GoalState('press_acq_loc_btn', gs_press_widget, ('wait_loop', 200), (), {'param1': None } ),
 
 			GoalState('wait_loop', gs_wait_cb, ('wait_for_map_change', 500), ) ,	
-			GoalState('wait_for_map_change', gs_condition_map_change, ('end', 100), ('survival_check_window', 100), ) ,
-			GoalState('survival_check_window', gs_condition, ('press_encounter_accept', 100), ('wait_loop', 100), params={'param1': gs_survival_check_active} ) ,
-			GoalState('press_encounter_accept', gs_press_widget, ('end', 100), params={'param1':WID_IDEN.RND_ENC_UI_ACCEPT_BTN }),
+			GoalState('wait_for_map_change', gs_condition_map_change, ('is_intended_area', 100), ('survival_check_window', 100), ) ,
+			
+			# map hasn't changed yet - periodically check for "Survival Check" window (random encounter Accept/Deny)
+			GoalStateCondition('survival_check_window', gs_survival_check_active, ('press_encounter_accept', 100), ('wait_loop', 100),  ) ,
+			GoalState('press_encounter_accept', gs_press_widget, ('await_combat', 100), params={'param1':WID_IDEN.RND_ENC_UI_ACCEPT_BTN }),
+			GoalState('await_combat', gs_wait_cb, ('end', 1000), ),	
+
+			GoalStateCondition('is_intended_area', lambda slot: (game.leader.area == area_id) or (area_id is None), ('end', 100), ('start', 100), ) ,
 
 			GoalState('end', gs_wait_cb, ('end', 500), ) ,	
 		])
 	return cs
+
 
 def create_hommlet_scheme1():
 	cs = ControlScheme()
@@ -1028,3 +1098,31 @@ def create_hommlet_scheme0():
 	)
 	return cs
 
+def create_brigand_tower_scheme():
+	cs = ControlScheme()
+	def gs_brigand_tower_init(slot):
+		if game.leader == OBJ_HANDLE_NULL:
+			return 0
+		return 1
+	def gs_brigand_tower_end(slot):
+		return 1
+	TEMPLE_COURTYARD_TO_TOWER_EXIT = (400, 470)
+	TEMPLE_TOWER_ENTRANCE_LOC      = (480, 500)
+	
+	TEMPLE_TOWER_EXTERIOR_MAP = 5111
+	TEMPLE_TOWER_INTERIOR_MAP = 5065
+	TEMPLE_COURTYARD_MAP = 5062
+	cs.__set_stages__([
+		GoalState('start', gs_brigand_tower_init, ('check_temple_area', 100), ),
+		GoalStateCondition('check_temple_area', lambda slot: game.leader.area == 4, ('check_temple_courtyard', 100), ('go_temple', 100), ),
+		GoalState('go_temple', gs_push_scheme, ('check_temple_courtyard', 100), params={'param1': 'goto_temple'}),
+		
+		GoalStateCondition('check_temple_courtyard', lambda slot: game.leader.map == TEMPLE_COURTYARD_MAP, ('go_temple_tower_map', 100), ('check_temple_tower_ext', 100), ),
+		GoalStateCreatePushScheme('go_temple_tower_map', 'go_temple_tower_map', create_scheme_enter_building, (TEMPLE_COURTYARD_TO_TOWER_EXIT, TEMPLE_TOWER_EXTERIOR_MAP ),('check_temple_tower_ext', 100) ),
+		
+		GoalStateCondition('check_temple_tower_ext', lambda slot: game.leader.map == TEMPLE_TOWER_EXTERIOR_MAP, ('go_temple_tower_interior', 100), ('go_temple', 100), ),
+		GoalStateCreatePushScheme('go_temple_tower_interior', 'go_temple_tower_map', create_scheme_enter_building, (TEMPLE_TOWER_ENTRANCE_LOC, TEMPLE_TOWER_INTERIOR_MAP ),('end', 100) ),
+
+		GoalState('end', gs_brigand_tower_end, ('end', 100), )
+	])
+	return cs
