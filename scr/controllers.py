@@ -336,6 +336,7 @@ class ControllerBase:
     
     def __init__(self):
         self.__goal_slot__ = GoalSlot()
+        self.__active__ = True
         return
 
     def set_active(self, value):
