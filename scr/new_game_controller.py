@@ -25,6 +25,7 @@ def gs_master(slot):
 		slot.state = {
 			'counter': 0,
 			'rest_needed': False,
+			'try_go_outside_counter': 0
 		}
 	else:
 		# print('master counter: ', slot.state['counter'])
@@ -54,14 +55,17 @@ def gs_master(slot):
 		
 		game.areas[3] = 1 # nulb
 		game.areas[4] = 1 # ToEE
+		if game.is_outdoor():
+			slot.state['try_go_outside_counter'] = 0
+		
 		if leader.area == 1: # Hommlet
 			if leader.map == 5001: # Hommlet main
 				if slot.state['rest_needed']:
 					slot.state['rest_needed'] = False
 					pt.push_scheme('rest')
 					return 0
-				# random_schemes = ['goto_nulb', 'goto_brigand_tower']
-				random_schemes = [ 'goto_brigand_tower']
+				random_schemes = ['goto_nulb', 'goto_brigand_tower']
+				# random_schemes = [ 'goto_brigand_tower']
 				random_choice  = game.random_range(0, len(random_schemes)-1)
 				pt.push_scheme(random_schemes[random_choice])
 				return 0
@@ -71,6 +75,14 @@ def gs_master(slot):
 				restup()
 			return 0
 		else: # outside Hommlet
+			if not game.is_outdoor():
+				pt.push_scheme('exit_building')
+				if slot.state['try_go_outside_counter'] >= 5:
+					pt.add_scheme( create_load_game_scheme(1), 'load_game' )
+					pt.push_scheme('load_game')
+					return 0
+				slot.state['try_go_outside_counter'] += 1
+				return 0
 			slot.state['rest_needed'] = True
 			pt.push_scheme('goto_hommlet')
 			return 0
@@ -834,13 +846,33 @@ def create_scheme_go_to_tile( loc ):
 		return result
 
 	def arrived_at_check(slot):
+		#type: (GoalSlot)->int
+		state = slot.get_scheme_state()
+		
+		# failsafe mechanism
+		is_toggling_selection = False
+		selected = game.selected
+		if not 'selected_count' in state:
+			state['selected_count'] = len(selected)
+		else:
+			if state['selected_count'] != len(selected):
+				is_toggling_selection = True
+
+
+		
 		DIST_THRESHOLD = 15
+		not_all_near = False
 		for pc in game.party:
 			if pc.is_unconscious():
 				continue
 			if pc.distance_to(loc) > DIST_THRESHOLD:
-				return False
-		return True
+				not_all_near = True
+		if is_toggling_selection:
+			return 1
+		if not_all_near:
+			return 0
+
+		return 1
 	
 	cs.__set_stages__([
 		GoalState('start', gs_select_all, ('check_loc', 500), ),
