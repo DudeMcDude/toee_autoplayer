@@ -18,3 +18,14 @@ class PySpellStore:
 
     
     pass
+
+class PyObjHandle:
+    spells_known = () #type: tuple[PySpellStore]
+    def obj_get_int(self, obj_f_):
+        return 0
+    def obj_get_spell(self, obj_f_, idx):
+        return PySpellStore()
+    def cast_spell(self, spell_enum, tgt = OBJ_HANDLE_NULL):
+        
+        return 0
+    pass

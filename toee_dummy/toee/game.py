@@ -1,4 +1,5 @@
 # dummy module for VSCode autocomplete / intellisense
+from toee import PyObjHandle
 
 # from templeplus.constants import *
 
@@ -7,3 +8,8 @@ def timevent_add(cb, args, delay_ms):
 
 def obj_list_vicinity():
     return
+
+def combat_is_active():
+    return False
+
+leader = PyObjHandle()
