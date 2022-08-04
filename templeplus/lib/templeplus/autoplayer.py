@@ -16,7 +16,8 @@ def play_new_game():
 def excb(arg):
     print('cawback #%s, is main menu: %s' %( str(arg), check_main_menu()) )
     # UiTimeEvent.schedule( excb, (arg+1,), 1000 )
-    autoplayer.game_reset()
+    if (check_main_menu()):
+        autoplayer.game_reset()
     return
 
 def advance_time(time_real):

@@ -30,6 +30,11 @@ def cheat_buff():
 	return
 
 def gs_master(slot):
+	#type: (GoalSlot)->int
+
+	# IMPORTANT NOTE: 
+	# 	push_scheme resets slot.state !!!!
+
 	pt = Playtester.get_instance()
 	if slot.state is None:
 		slot.state = {
@@ -89,12 +94,12 @@ def gs_master(slot):
 			return 0
 		else: # outside Hommlet
 			if not can_access_worldmap():
-				pt.push_scheme('exit_building')
 				if slot.state['try_go_outside_counter'] >= 5:
 					pt.add_scheme( create_load_game_scheme(1), 'load_game' )
 					pt.push_scheme('load_game')
 					return 0
 				slot.state['try_go_outside_counter'] += 1
+				pt.push_scheme('exit_building')
 				return 0
 			slot.state['rest_needed'] = True
 			pt.push_scheme('goto_hommlet')
@@ -318,6 +323,8 @@ def combat_action_handler(slot):
 			flags = tgt.object_flags_get()
 			if flags & OF_DONTDRAW:
 				continue
+			if flags & OF_CLICK_THROUGH:
+				continue
 			
 			dist = tgt.distance_to(obj)
 			if dist < 15:
@@ -428,6 +435,7 @@ def combat_action_handler(slot):
 				idx = game.random_range(0, len(castable_offensive)-1)
 				spell = castable_offensive[idx]
 				tpactions.cur_seq_reset(obj)
+				print('Controller: casting spell %s' % (str(spell)) )
 				obj.cast_spell(spell.spell_enum, tgt)
 				return 1000
 			

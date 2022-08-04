@@ -354,6 +354,7 @@ class ControllerBase:
         return self.__active__
 
     def game_reset(self):
+        print('Controller: game_reset()')
         self.interrupt()
         return
     def add_scheme(self, scheme, scheme_id):
