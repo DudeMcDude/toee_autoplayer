@@ -10,7 +10,7 @@ class ControllerConsole:
 	
 	playtester_instance = None
 	is_minimized = True
-	is_paused = True
+	is_paused = False
 
 	def __init__(self, playtester_instance):
 		self.playtester_instance = playtester_instance

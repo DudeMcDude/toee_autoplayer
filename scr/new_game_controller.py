@@ -14,15 +14,19 @@ PLAYTEST_EN = True
 def can_access_worldmap():
 	if len(game.party) == 0:
 		return False
-	map_adj = game.leader.map - 5001
-	return map_adj in [0,1, 50, 61,67,68, 90,92,93,94, 111, 112, 120, 131, 107]
-
+	map_id = game.leader.map
+	if map_id in range(5070, 5078): # random encounter maps
+		return True
+	map_adj = map_id - 5001
+	result = map_adj in [0,1, 50, 61,67,68,  73 ,90,92,93,94, 111, 112, 120, 131, 107]
+	print('can_access_worldmap: result = %s, mapid = %d' % (str(result), int(map_adj + 5001) ))
+	return result
+	
 def cheat_buff():
-	if game.leader != OBJ_HANDLE_NULL: # make us durable!!!
-		for pc in game.party:
-			if pc.obj_get_int(obj_f_hp_pts) < 100:
-				pc.obj_set_int(obj_f_hp_pts, 100)
-				pc.stat_base_set(stat_strength,28)
+	for pc in game.party:
+		if pc.obj_get_int(obj_f_hp_pts) <= 100:
+			pc.obj_set_int(obj_f_hp_pts, 1)
+			pc.stat_base_set(stat_strength,28)
 	return
 
 def gs_master(slot):
@@ -46,6 +50,7 @@ def gs_master(slot):
 	
 	if len(game.party) == 0:
 			return 0
+	print('Controller: main state = %s ' % ( str(slot.state) ) )
 
 	if slot.state['counter'] >= 1 and slot.state['counter'] <= 300000:
 		cheat_buff()
@@ -422,6 +427,7 @@ def combat_action_handler(slot):
 			if will_cast_offensive:
 				idx = game.random_range(0, len(castable_offensive)-1)
 				spell = castable_offensive[idx]
+				tpactions.cur_seq_reset(obj)
 				obj.cast_spell(spell.spell_enum, tgt)
 				return 1000
 			
@@ -1024,13 +1030,14 @@ def create_goto_area(area_name, area_id = None):
 
 			GoalState('wait_loop', gs_wait_cb, ('wait_for_map_change', 500), ) ,	
 			GoalState('wait_for_map_change', gs_condition_map_change, ('is_intended_area', 100), ('survival_check_window', 100), ) ,
-			
+			GoalStateCondition('is_intended_area', lambda slot: (game.leader.area == area_id) or (area_id is None), ('end', 100), ('await_combat', 1200), ) ,
+
 			# map hasn't changed yet - periodically check for "Survival Check" window (random encounter Accept/Deny)
 			GoalStateCondition('survival_check_window', gs_survival_check_active, ('press_encounter_accept', 100), ('wait_loop', 100),  ) ,
 			GoalState('press_encounter_accept', gs_press_widget, ('await_combat', 100), params={'param1':WID_IDEN.RND_ENC_UI_ACCEPT_BTN }),
-			GoalState('await_combat', gs_wait_cb, ('end', 1000), ),	
+			GoalState('await_combat', gs_wait_cb, ('is_intended_area2', 1200), ),	
 
-			GoalStateCondition('is_intended_area', lambda slot: (game.leader.area == area_id) or (area_id is None), ('end', 100), ('start', 100), ) ,
+			GoalStateCondition('is_intended_area2', lambda slot: (game.leader.area == area_id) or (area_id is None), ('end', 100), ('start', 100), ) ,
 
 			GoalState('end', gs_wait_cb, ('end', 500), ) ,	
 		])
