@@ -8,6 +8,7 @@ from toee import game
 class ControllerConsole:
 	txt = None
 	btn = None
+	is_minimized = True
 	is_paused = True
 	def __init__(self):
 		ROOT_ID = "controller_gui"
@@ -66,23 +67,31 @@ class ControllerConsole:
 		minimize_btn.set_style_id("chargen-button")
 		minimize_btn.width = 28
 		self.minimize_btn = minimize_btn
-		def b2_click():
-			if wind.height > 40:
-				wind.height = 40
+		def set_wnd_minimized(value):
+			self.is_minimized = value
+			if self.is_minimized:
 				wind.width = 60
-				minimize_btn.set_text("[[ ]]")
-				minimize_btn.width = 28
+				wind.height = 40
 				try:
 					subw.hide()
 				except Exception as e:
 					print(str(e))
+					pass
 				# self.txt.hide()
 			else:
-				minimize_btn.set_text("_")
-				wind.height = 256
 				wind.width = 400
-				minimize_btn.width = 28
+				wind.height = 256
 				subw.show()
+		set_wnd_minimized(True)
+		def b2_click():
+			if not self.is_minimized: # minimize
+				set_wnd_minimized(True)
+				minimize_btn.set_text("[[ ]]")
+				minimize_btn.width = 28
+			else: # maximize
+				set_wnd_minimized(False)
+				minimize_btn.set_text("_")
+				minimize_btn.width = 28
 				# self.txt.show()
 			return True
 		minimize_btn.set_click_handler( b2_click )

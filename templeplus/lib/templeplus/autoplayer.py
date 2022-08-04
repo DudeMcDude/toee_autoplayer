@@ -14,8 +14,9 @@ def play_new_game():
     return
 
 def excb(arg):
-    print('cawback #' + str(arg))
+    print('cawback #%s, is main menu: %s' %( str(arg), check_main_menu())+ str(arg))
     # UiTimeEvent.schedule( excb, (arg+1,), 1000 )
+    autoplayer.game_reset()
     return
 
 def advance_time(time_real):
@@ -24,7 +25,7 @@ def advance_time(time_real):
     UiTimeEvent.__is_advance_time__ = True
     if UiTimeEvent.__first_after_reset__:
         # print('scheduling')
-        UiTimeEvent.schedule( excb, (1,), 1000 )
+        UiTimeEvent.schedule( excb, (1,), 400 )
         UiTimeEvent.__first_after_reset__ = False
         return
     UiTimeEvent.expire_events()

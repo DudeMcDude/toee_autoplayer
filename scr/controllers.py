@@ -352,6 +352,9 @@ class ControllerBase:
     def is_active(self):
         return self.__active__
 
+    def game_reset(self):
+        self.interrupt()
+        return
     def add_scheme(self, scheme, scheme_id):
         # type: (ControlScheme, int)->None
         assert isinstance(scheme, ControlScheme) == True, "bad scheme type!"
@@ -419,7 +422,7 @@ class ControllerBase:
     def interrupt(self):
         print('Controller: Interrupt!')
         slot = self.__goal_slot__
-        if len(slot.goal_stack) > 1:
+        while len(slot.goal_stack) > 1:
             self.pop_scheme()
         return
 
