@@ -11,6 +11,12 @@ import gamedialog as dlg
 
 PLAYTEST_EN = True
 
+def can_access_worldmap():
+	if len(game.party) == 0:
+		return False
+	map_adj = game.leader.map - 5001
+	return map_adj in [0,1, 50, 61,67,68, 90,92,93,94, 111, 112, 120, 131, 107]
+
 def cheat_buff():
 	if game.leader != OBJ_HANDLE_NULL: # make us durable!!!
 		for pc in game.party:
@@ -38,6 +44,9 @@ def gs_master(slot):
 		# pt.push_scheme('new_game')
 		return 0
 	
+	if len(game.party) == 0:
+			return 0
+
 	if slot.state['counter'] >= 1 and slot.state['counter'] <= 300000:
 		cheat_buff()
 		if game.quests[18].state != qs_completed:
@@ -49,13 +58,12 @@ def gs_master(slot):
 			pt.push_scheme('hommlet1')
 			return 0
 		
-		leader = game.leader
-		if leader == OBJ_HANDLE_NULL:
-			return 0
 		
+		leader = game.leader
+
 		game.areas[3] = 1 # nulb
 		game.areas[4] = 1 # ToEE
-		if game.is_outdoor():
+		if can_access_worldmap():
 			slot.state['try_go_outside_counter'] = 0
 		
 		if leader.area == 1: # Hommlet
@@ -75,7 +83,7 @@ def gs_master(slot):
 				restup()
 			return 0
 		else: # outside Hommlet
-			if not game.is_outdoor():
+			if not can_access_worldmap():
 				pt.push_scheme('exit_building')
 				if slot.state['try_go_outside_counter'] >= 5:
 					pt.add_scheme( create_load_game_scheme(1), 'load_game' )
@@ -102,7 +110,8 @@ def setup_playtester(autoplayer):
 	autoplayer = autoplayer #type: ControllerBase
 	autoplayer.__logging__ = True
 	from controller_console import ControllerConsole
-	autoplayer.console = ControllerConsole()
+	autoplayer.console = ControllerConsole(autoplayer)
+
 	autoplayer.add_scheme( create_new_game_scheme(), 'new_game' )
 	autoplayer.add_scheme( create_load_game_scheme(), 'load_game' )
 	autoplayer.add_scheme( create_true_neutral_scheme(), 'true_neutral_vig' )
@@ -1005,7 +1014,7 @@ def create_goto_area(area_name, area_id = None):
 	cs.__set_stages__(
 		[
 			GoalState('start', gs_goto_area_init, ('check_outdoors',100 ), ),
-			GoalState('check_outdoors', gs_condition, ('open_worldmap', 500), ('end', 100), params={'param1': lambda slot: game.is_outdoor()} ) ,
+			GoalState('check_outdoors', gs_condition, ('open_worldmap', 500), ('end', 100), params={'param1': lambda slot: can_access_worldmap()} ) ,
 		
 			GoalState('open_worldmap', gs_push_scheme, ('find_acq_loc_btn', 100), params={'param1': 'open_worldmap'}),
 		

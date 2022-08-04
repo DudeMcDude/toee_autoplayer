@@ -1,6 +1,5 @@
 
 import tpgui
-from templeplus.playtester import Playtester
 from toee import *
 from toee import game
 
@@ -8,9 +7,13 @@ from toee import game
 class ControllerConsole:
 	txt = None
 	btn = None
+	
+	playtester_instance = None
 	is_minimized = True
 	is_paused = True
-	def __init__(self):
+
+	def __init__(self, playtester_instance):
+		self.playtester_instance = playtester_instance
 		ROOT_ID = "controller_gui"
 		w=tpgui._add_root_container(ROOT_ID, 500,256)
 		wind = tpgui._get_container(ROOT_ID)
@@ -45,8 +48,8 @@ class ControllerConsole:
 		self.btn = b
 		def butclick():
 			# b = tpgui._get_button("btn1")
-			slot = Playtester.get_instance().__goal_slot__
-			scheme = Playtester.get_instance().get_cur_scheme()
+			slot = self.playtester_instance.__goal_slot__
+			scheme = self.playtester_instance.get_cur_scheme()
 			state_txt = "Cur scheme: "
 			if scheme is not None:
 				state_txt += str(scheme) + " "
@@ -98,18 +101,19 @@ class ControllerConsole:
 
 		# Pause / Play button
 		pause_btn = tpgui._add_button(ROOT_ID, "pause_btn")
-		pause_btn.set_text(">>"); pause_btn.x = 40; pause_btn.y = 0
+		pause_btn.set_text("||"); pause_btn.x = 40; pause_btn.y = 0
 		pause_btn.set_style_id("chargen-button")
 		pause_btn.width = 28
 		self.pause_btn = pause_btn
 
 		def pause_click():
+			print("Playtester instance: ", str(self.playtester_instance))
 			def update_text():
 				pause_btn.set_text( ">>" if self.is_paused else "||")
 				pause_btn.width = 28
 				return
 
-			is_paused = not Playtester().get_instance().is_active()
+			is_paused = not self.playtester_instance.is_active()
 			if is_paused != self.is_paused:
 				self.is_paused = is_paused
 				update_text()
@@ -119,11 +123,11 @@ class ControllerConsole:
 				print('clicked to run')
 				self.is_paused = False
 				update_text()
-				Playtester().get_instance().set_active(True)
+				self.playtester_instance.set_active(True)
 			else:
 				print('clicked to pause')
 				self.is_paused = True
 				update_text()
-				Playtester().get_instance().set_active(False)
+				self.playtester_instance.set_active(False)
 			pass
 		pause_btn.set_click_handler( pause_click )
