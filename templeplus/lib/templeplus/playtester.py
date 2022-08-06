@@ -16,6 +16,7 @@ class Playtester(ControllerBase):
         return Playtester.__instance__
     
     def schedule(self, delay_msec = 200, real_time = 1):
+        # print('Playtester.schedule')
         UiTimeEvent.schedule( self.execute, (), delay_msec)
         # game.timevent_add( self.execute, (), delay_msec, real_time) 
         # # removed the above to avoid the game (not) serializing the controller object (which would lead to a crash on game load)

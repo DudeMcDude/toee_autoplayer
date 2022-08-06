@@ -10,23 +10,48 @@ import tpdp
 import gamedialog as dlg
 import logbook
 
-PLAYTEST_EN = True
-SKIP_LOOTING = False
+PLAYTEST_EN = False
+SKIP_LOOTING = True
+INITIAL_LOAD = 0 # which save game to load on game start; set -1 to start new game
 
 
-TEMPLE_COURTYARD_MAP = 5062
+HOMMLET_EXTERIOR_MAP      = 5001
+HOMMLET_INN_MAIN_MAP      = 5007
+TEMPLE_COURTYARD_MAP      = 5062
+TEMPLE_INTERIOR           = 5064
 TEMPLE_TOWER_INTERIOR_MAP = 5065
+TEMPLE_DUNGEON_LEVEL_1    = 5066
 TEMPLE_TOWER_EXTERIOR_MAP = 5111
-map_connectivity = {
-	TEMPLE_COURTYARD_MAP: { 
+
+
+map_connectivity = { # TODO: automate this
+	HOMMLET_EXTERIOR_MAP: { #5001
+		HOMMLET_INN_MAIN_MAP: (619, 404)
+	},
+
+	HOMMLET_INN_MAIN_MAP: { # 5007
+		HOMMLET_EXTERIOR_MAP: (486, 489)
+	},
+
+	TEMPLE_COURTYARD_MAP: { # 5062
+		TEMPLE_INTERIOR: (518, 458),
 		TEMPLE_TOWER_EXTERIOR_MAP: (400, 470) 
 	},
 	
-	TEMPLE_TOWER_INTERIOR_MAP: {
+	TEMPLE_INTERIOR: { # 5064
+		TEMPLE_COURTYARD_MAP: (493, 571),
+		TEMPLE_DUNGEON_LEVEL_1: (555, 515)
+	},
+
+	TEMPLE_DUNGEON_LEVEL_1: { # 5066
+		TEMPLE_INTERIOR: (544, 589),
+	},
+
+	TEMPLE_TOWER_INTERIOR_MAP: { # 5065
 		TEMPLE_TOWER_EXTERIOR_MAP: (485, 497) ,
 	},
 
-	TEMPLE_TOWER_EXTERIOR_MAP: { 
+	TEMPLE_TOWER_EXTERIOR_MAP: { # 5111
 		TEMPLE_TOWER_INTERIOR_MAP: (480, 500),
 		TEMPLE_COURTYARD_MAP: (495, 552), 
 	},
@@ -70,9 +95,11 @@ def gs_master(slot):
 	
 	
 	if gs_is_main_menu(slot):
-		pt.add_scheme( create_load_game_scheme(2), 'load_game' )
-		pt.push_scheme('load_game')
-		# pt.push_scheme('new_game')
+		if INITIAL_LOAD >= 0:
+			pt.add_scheme( create_load_game_scheme(INITIAL_LOAD), 'load_game' )
+			pt.push_scheme('load_game')
+		else:
+			pt.push_scheme('new_game')
 		return 0
 	
 	if len(game.party) == 0:
@@ -118,7 +145,7 @@ def gs_master(slot):
 		else: # outside Hommlet
 			if not can_access_worldmap():
 				if slot.state['try_go_outside_counter'] >= 5:
-					pt.add_scheme( create_load_game_scheme(2), 'load_game' )
+					pt.add_scheme( create_load_game_scheme(INITIAL_LOAD), 'load_game' )
 					pt.push_scheme('load_game')
 					return 0
 				slot.state['try_go_outside_counter'] += 1
@@ -880,7 +907,6 @@ def create_true_neutral_scheme():
 	return cs
 
 def create_rest_scheme():
-	WELCOME_WENCH_MAP_ID = 5007; WELCOME_WENCH_ENTRANCE_LOC = (619, 404)
 	def init_rest_scheme(slot):
 		#type: (GoalSlot)->int
 		state =slot.get_scheme_state()
@@ -888,8 +914,8 @@ def create_rest_scheme():
 		loc = (500,500)
 		tgt_map_id = -1
 		if game.leader.map == 5001: # Hommlet
-			loc        = WELCOME_WENCH_ENTRANCE_LOC
-			tgt_map_id = WELCOME_WENCH_MAP_ID
+			loc        = map_connectivity[HOMMLET_EXTERIOR_MAP][HOMMLET_INN_MAIN_MAP]
+			tgt_map_id = HOMMLET_INN_MAIN_MAP
 
 		args = ( loc, tgt_map_id )
 		
@@ -931,8 +957,10 @@ def create_ui_camp_rest_scheme():
 		[
 		GoalState('start', gs_wait_cb, ('click_camp', 100), ) ,] +
 		GoalState.from_sequence('click_camp', [
-		GoalState('', gs_press_widget, ('', 500), (), {'param1': WID_IDEN.UTIL_BAR_CAMP_BTN } ),
-		GoalState('', gs_press_widget, ('', 1500), (), {'param1': WID_IDEN.CAMPING_UI_REST_BTN } ),
+			GoalState('', gs_press_widget, ('', 500), (), {'param1': WID_IDEN.UTIL_BAR_CAMP_BTN } ),
+			GoalState('', gs_press_widget, ('', 500), (), {'param1': WID_IDEN.CAMPING_UI_UNTIL_HEALED_BTN } ),
+			GoalState('', gs_press_widget, ('', 500), (), {'param1': WID_IDEN.CAMPING_UI_DAYS_INC } ), # incase the above is 0 days (might still want to cure poison/disease and such)
+			GoalState('', gs_press_widget, ('', 1500), (), {'param1': WID_IDEN.CAMPING_UI_REST_BTN } ),
 		], ('end', 100) ) + 
 		[GoalState('end', gs_wait_cb, ('end', 100), ) ,	])
 	return cs
@@ -1160,17 +1188,25 @@ def create_get_worldmap_access():
 		0: None,
 		4: TEMPLE_COURTYARD_MAP,
 	}
+	special_map_cases = {
+		TEMPLE_TOWER_EXTERIOR_MAP: TEMPLE_COURTYARD_MAP
+	}
 	def gs_init_get_worldmap_access(slot):
 		# type: (GoalSlot)->int
 		state = slot.get_scheme_state()
 		cur_map = game.leader.map
 		if not (game.leader.area in worldmap_access_map_by_area):
+			print('worldmap_access_map_by_area: not defined for area [%d]' % game.leader.area)
 			return 0
 		tgt_map = worldmap_access_map_by_area[game.leader.area]
+		
+		if cur_map in special_map_cases:
+			tgt_map = special_map_cases[cur_map]
+		
 		if tgt_map is None:
-			if cur_map == TEMPLE_TOWER_EXTERIOR_MAP:
-				tgt_map = TEMPLE_COURTYARD_MAP
+			print('gs_init_get_worldmap_access: tgt map is None')
 			return 0
+		
 		map_course = get_map_course(cur_map, tgt_map)
 		state['access_worldmap'] = {
 			'cur_map': cur_map,

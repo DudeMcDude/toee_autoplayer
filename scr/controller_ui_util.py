@@ -148,8 +148,10 @@ class WID_IDEN:
     UTIL_BAR_CAMP_BTN = [ ('utility_bar_ui.c 481',), None, 4]
     UTIL_BAR_MAP_BTN = [ ('utility_bar_ui.c 481',), None, 3]
 
-    CAMPING_UI_REST_BTN = [ ('camping_ui.c 570',), None, 0]
-
+    CAMPING_UI_REST_BTN         = [ ('camping_ui.c 570',), None, 0]
+    CAMPING_UI_DAYS_INC         = [ ('camping_ui.c 570',), None, 2]
+    CAMPING_UI_UNTIL_HEALED_BTN = [ ('camping_ui.c 570',), None, 6]
+    
     TOWNMAP_UI_WORLD_BTN = [ ('townmap_ui_main_window',), ('townmap_ui_world_map_butn',) ]
 
     WORLDMAP_UI_SELECTION_BTNS = [ 
