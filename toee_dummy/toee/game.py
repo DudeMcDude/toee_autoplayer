@@ -6,7 +6,7 @@ from toee import PyObjHandle
 def timevent_add(cb, args, delay_ms):
     return
 
-def obj_list_vicinity():
+def obj_list_vicinity(loc, filter):
     return
 
 def combat_is_active():

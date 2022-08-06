@@ -23,18 +23,25 @@ def get_party_idx(obj):
 def get_object(obj_identifier):
 	if type(obj_identifier) is dict:
 		loc = game.leader.location
-		if obj_identifier.get('location'):
+		if 'location' in obj_identifier:
 			loc = obj_identifier['location']
+			if type(loc) is tuple:
+				loc = location_from_axis(*loc)
 		obj_type = OLC_ALL
 		if obj_identifier.get('obj_t'):
 			obj_type = obj_identifier['obj_t']
 		
 		obj_list = game.obj_list_vicinity(loc, obj_type)
-		if obj_identifier.get('proto'):
+		if 'proto' in obj_identifier:
 			proto_id = obj_identifier['proto']
 			obj_list = [x for x in obj_list if x.proto == proto_id]
 		if len(obj_list) == 0:
 			return OBJ_HANDLE_NULL
+		if 'guid' in obj_identifier:
+			guid = obj_identifier['guid']
+			obj_list = [x for x in obj_list if x.__getstate__() == guid]
+			if len(obj_list) == 0:
+				return OBJ_HANDLE_NULL
 		# get closest one
 		obj_list.sort(key = lambda x: x.distance_to(loc))
 		return obj_list[0]
@@ -558,7 +565,7 @@ def gs_create_and_push_scheme(slot):
 		create_cb, args = slot.param2
 
 	if slot.state is None:
-		print('gs_create_and_push_scheme: ID = %s args = %s' %(id, str(args)) )
+		print('gs_create_and_push_scheme: ID = %s , args = %s' %(id, str(args)) )
 		cs = create_cb(*args)
 		slot.state = {}
 		

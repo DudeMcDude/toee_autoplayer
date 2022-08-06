@@ -22,7 +22,7 @@
 		"body": [
 			"def gs_(slot):",
 			"\t# type: (GoalSlot)->int",
-			"\treturn"
+			"\treturn 1"
 		],
 		"description": "goalstate callback"
 	}

@@ -8,8 +8,29 @@ import autoui as aui
 import controller_ui_util
 import tpdp
 import gamedialog as dlg
+import logbook
 
 PLAYTEST_EN = True
+SKIP_LOOTING = False
+
+
+TEMPLE_COURTYARD_MAP = 5062
+TEMPLE_TOWER_INTERIOR_MAP = 5065
+TEMPLE_TOWER_EXTERIOR_MAP = 5111
+map_connectivity = {
+	TEMPLE_COURTYARD_MAP: { 
+		TEMPLE_TOWER_EXTERIOR_MAP: (400, 470) 
+	},
+	
+	TEMPLE_TOWER_INTERIOR_MAP: {
+		TEMPLE_TOWER_EXTERIOR_MAP: (485, 497) ,
+	},
+
+	TEMPLE_TOWER_EXTERIOR_MAP: { 
+		TEMPLE_TOWER_INTERIOR_MAP: (480, 500),
+		TEMPLE_COURTYARD_MAP: (495, 552), 
+	},
+}
 
 def can_access_worldmap():
 	if len(game.party) == 0:
@@ -19,13 +40,13 @@ def can_access_worldmap():
 		return True
 	map_adj = map_id - 5001
 	result = map_adj in [0,1, 50, 61,67,68,  73 ,90,92,93,94, 111, 112, 120, 131, 107]
-	print('can_access_worldmap: result = %s, mapid = %d' % (str(result), int(map_adj + 5001) ))
+	# print('can_access_worldmap: result = %s, mapid = %d' % (str(result), int(map_adj + 5001) ))
 	return result
 	
 def cheat_buff():
 	for pc in game.party:
-		if pc.obj_get_int(obj_f_hp_pts) <= 100:
-			pc.obj_set_int(obj_f_hp_pts, 1)
+		if pc.obj_get_int(obj_f_hp_pts) <= 500:
+			pc.obj_set_int(obj_f_hp_pts, 100)
 			pc.stat_base_set(stat_strength,28)
 	return
 
@@ -42,13 +63,14 @@ def gs_master(slot):
 			'rest_needed': False,
 			'try_go_outside_counter': 0
 		}
+		
 	else:
 		# print('master counter: ', slot.state['counter'])
 		slot.state['counter'] += 1
 	
 	
 	if gs_is_main_menu(slot):
-		pt.add_scheme( create_load_game_scheme(1), 'load_game' )
+		pt.add_scheme( create_load_game_scheme(2), 'load_game' )
 		pt.push_scheme('load_game')
 		# pt.push_scheme('new_game')
 		return 0
@@ -84,22 +106,23 @@ def gs_master(slot):
 					return 0
 				random_schemes = ['goto_nulb', 'goto_brigand_tower']
 				# random_schemes = [ 'goto_brigand_tower']
+				# random_schemes = [ 'goto_nulb']
 				random_choice  = game.random_range(0, len(random_schemes)-1)
 				pt.push_scheme(random_schemes[random_choice])
 				return 0
 			# inside building
 			pt.push_scheme('exit_building')
-			if game.random_range(0,6) == 1:
+			if game.random_range(0,2) == 1:
 				restup()
 			return 0
 		else: # outside Hommlet
 			if not can_access_worldmap():
 				if slot.state['try_go_outside_counter'] >= 5:
-					pt.add_scheme( create_load_game_scheme(1), 'load_game' )
+					pt.add_scheme( create_load_game_scheme(2), 'load_game' )
 					pt.push_scheme('load_game')
 					return 0
 				slot.state['try_go_outside_counter'] += 1
-				pt.push_scheme('exit_building')
+				pt.push_scheme('get_worldmap_access')
 				return 0
 			slot.state['rest_needed'] = True
 			pt.push_scheme('goto_hommlet')
@@ -127,7 +150,7 @@ def setup_playtester(autoplayer):
 	autoplayer.add_scheme( create_true_neutral_scheme(), 'true_neutral_vig' )
 	autoplayer.add_scheme( create_hommlet_scheme0(), 'hommlet0')
 	autoplayer.add_scheme( create_ui_camp_rest_scheme(), 'ui_camp_rest' )
-	autoplayer.add_scheme( create_open_worldmap(), 'open_worldmap')
+	autoplayer.add_scheme( create_open_worldmap_ui(), 'open_worldmap')
 	autoplayer.add_scheme( create_rest_scheme(), 'rest' )
 
 	autoplayer.add_scheme( create_shop_map_scheme(), 'shopmap' )
@@ -139,6 +162,7 @@ def setup_playtester(autoplayer):
 	autoplayer.add_scheme( create_brigand_tower_scheme(), 'goto_brigand_tower' )
 	
 	autoplayer.add_scheme( create_scheme_enter_building(None), 'exit_building' )
+	autoplayer.add_scheme( create_get_worldmap_access(), 'get_worldmap_access')
 	
 	autoplayer.set_dialog_handler(dialog_handler)
 	autoplayer.set_combat_handler(combat_handler)
@@ -294,10 +318,18 @@ def combat_handler(slot):
 	def gs_combat_end(slot):
 		Playtester.get_instance().combat_mode_set(False)
 		return 1
-	
+	def gs_item_wield_best_all(slot):
+		# type: (GoalSlot)->int
+		for pc in game.party:
+			if pc.type == obj_t_pc:
+				pc.item_wield_best_all()
+		return 1
+
 	cs.__set_stages__([
 		GoalState('start',gs_combat_init, ('combat_loop', 100), ('end', 100),  ),
-		GoalState('combat_loop', gs_combat_action_handler, ('combat_loop', 100), ('end', 100),  ),
+		GoalState('combat_loop', gs_combat_action_handler, ('combat_loop', 100), ('loot_critters', 100),  ),
+		GoalState('loot_critters', gs_loot_after_combat, ('equip_best', 100),  ),
+		GoalState('equip_best', gs_item_wield_best_all, ('end', 100) ),
 		GoalState('end',gs_combat_end, ('end', 100),   ),
 	])
 	id = 'handle_combat'
@@ -401,10 +433,17 @@ def combat_action_handler(slot):
 	is_caster = obj_is_caster(obj)
 	has_ranged = obj_has_ranged_weapon(obj)
 
-	
+	def should_cast():
+		if not is_caster:
+			return False
+		if act_seq_cur.tb_status.hourglass_state < 4: # Full action bar
+			return False
+		if obj.d20_query_has_spell_condition(sp_Silence_Hit):
+			return False
+		return True
 	if is_caster:
 		# try cast
-		if act_seq_cur.tb_status.hourglass_state >= 4: # Full action bar
+		if should_cast():
 			spells_known = obj.spells_known
 			castable_offensive = []
 			castable_defensive = []
@@ -450,7 +489,7 @@ def combat_action_handler(slot):
 			pass # todo: unequip ranged weapon, go melee?
 			return 300
 				
-			
+		
 	# restup()
 	if True: #obj == game.party[1]: # ariel
 		result = obj.ai_strategy_execute(tgt)
@@ -542,7 +581,11 @@ def gs_move_mouse_to_object(slot):
 	obj = get_object( slot.param1 )
 	if obj is None:
 		return 0 # todo handle this..
-	controller_ui_util.move_mouse_to_obj(obj)
+	off_x, off_y = 0,0
+	if slot.state is not None and 'tweak_x' in slot.state:
+		off_x = slot.state['tweak_x']
+		off_y = slot.state['tweak_y']
+	controller_ui_util.move_mouse_to_obj(obj, off_x, off_y)
 	return 1
 
 def gs_scroll_to_tile_and_click(slot):
@@ -573,26 +616,78 @@ def gs_scroll_to_tile_and_click(slot):
 
 
 def gs_click_on_object(slot):
+	#type: (GoalSlot)->int
+	'''
+	param1 - object ref
+	'''
+	
 	# print('gs_click_on_object')
 	state = slot.state
+	obj_ref = slot.param1
+	if obj_ref is None:
+		scheme_state = slot.get_scheme_state()
+		if 'click_object' in scheme_state:
+			obj_ref = scheme_state['click_object']['obj_ref']
+	if obj_ref is None:
+		print('gs_click_on_object: obj_ref not found' )
+	
+	obj = get_object(obj_ref)
+	if obj == OBJ_HANDLE_NULL:
+		print('gs_click_on_object: cannot find obj %s specified by obj_ref = ' % str(obj_ref) )
+		return 0
+	
 	if state is None:	
 		slot.state = {
 			'hovered': False,
 			'clicked': False,
 		}
-	
-	if not slot.state['hovered']:
-		result = gs_move_mouse_to_object(slot) 
-		if result:
-			slot.state['hovered']=True
-			return 0
+
+		cs = create_move_mouse_to_obj(obj_ref)
+		Playtester.get_instance().add_scheme(cs, 'move_mouse_to_obj')
+		if Playtester.get_instance().push_scheme('move_mouse_to_obj'):
+			return 1
+		# print("coudn't activate scheme " + str(slot.param1))
 		return 0
-		#todo handle failures...
-	if not slot.state['clicked']:
-		# print('\t clicking!')
+	
+	if game.hovered == obj:
 		click_mouse()
 		return 1
 	return 0
+
+def is_moving_check(slot):
+	#type: (GoalSlot)->int
+	''' Returns 1 if any party member is moving/rotating (or, is in init stage)'''
+	if slot.state is None: # initialize locs
+		slot.state = {}
+		for n in range(len(game.party)):
+			pc = game.party[n]
+			slot.state['pc%d' % n] = pc.location
+			slot.state['pc%d_rot' % n] = pc.rotation
+
+		slot.state['map'] = game.leader.map
+		return 1
+	
+	result = 0
+	for n in range(len(game.party)):
+		pc = game.party[n]
+		key = 'pc%d' % n
+		key_rot = 'pc%d_rot' % n
+		if key in slot.state:
+			prev_loc = slot.state[key]	
+			prev_rot = slot.state[key_rot]
+			cur_rot = pc.rotation
+			cur_loc = pc.location
+			if prev_loc != cur_loc:
+				result = 1
+				slot.state['pc%d' % n] = pc.location
+			elif prev_rot != cur_rot:
+				result = 1
+				slot.state[key_rot] = cur_rot
+			
+		else: # in case someone joined along the way... e.g. Elmo in his impromptu dialogue
+			slot.state[key] = pc.location
+			slot.state[key_rot] = pc.rotation
+	return result
 
 def gs_click_to_talk(slot):
 	''' Similar to gs_click_on_object, except it immediately disables the automatic dialogue handler (because it could happen right away)
@@ -645,7 +740,7 @@ def gs_handle_dialogue(slot):
 #endregion
 
 
-
+#region schemes
 def create_party_pool_add_pc_scheme():
 	cs = ControlScheme()
 	wid_list = WID_IDEN.CHAR_POOL_CHARS
@@ -842,31 +937,82 @@ def create_ui_camp_rest_scheme():
 		[GoalState('end', gs_wait_cb, ('end', 100), ) ,	])
 	return cs
 
+def create_move_mouse_to_obj(obj_ref):
+	cs = ControlScheme()
+	def gs_init_move_mouse(slot):
+		#type: (GoalSlot)->int
+		state = slot.get_scheme_state()
+		obj = get_object(obj_ref)
+		state['mouse_move'] = {
+			'obj': obj,
+			'tweak_x': 0,
+			'tweak_y': 0,
+		}
+		if obj == OBJ_HANDLE_NULL:
+			return 0
+		return 1
+
+	def gs_move_mouse_to_object(slot):
+		# type: (GoalSlot)->int
+		# print('gs_move_mouse_to_object')
+		state = slot.get_scheme_state()
+		obj = state['mouse_move']['obj']
+		
+		off_x = state['mouse_move']['tweak_x']
+		off_y = state['mouse_move']['tweak_y']
+		controller_ui_util.move_mouse_to_obj(obj, off_x, off_y)
+		return 1
+
+	def gs_tweak_mouse_pos(slot):
+		#type: (GoalSlot)->int
+		state = slot.get_scheme_state()
+		x = state['mouse_move']['tweak_x']
+		y = state['mouse_move']['tweak_y']
+		radius = max( abs(x), abs(y) )
+		
+		amount = 3
+
+		if x == 0 and y == -radius: # end position: top
+			state['mouse_move']['tweak_x'] = amount
+			state['mouse_move']['tweak_y'] = -radius - amount
+			return 1
+
+		dx = amount if y < 0 else -amount
+		dy = amount if x > 0 else -amount
+		if abs(y) == radius and abs(x) < radius:
+			state['mouse_move']['tweak_x'] = x + dx
+			return 1
+		if abs(x) == radius and abs(y) < radius:
+			state['mouse_move']['tweak_y'] = y + dy
+			return 1
+		# corners
+		if x == y: # both == radius or -radius
+			state['mouse_move']['tweak_x'] = x + dx
+			return 1
+		# if x == -radius and y == -radius:
+		#     state['mouse_move']['tweak_y'] = y + dy
+		#     return 1
+		if x == -y:
+			state['mouse_move']['tweak_y'] = y + dy
+			return 1
+		# if x == -radius and y == radius:
+		#     state['mouse_move']['tweak_x'] = x + dx
+		#     return 1
+		return 1
+
+	cs.__set_stages__([
+		GoalState('start', gs_init_move_mouse, ('move_mouse', 10), ('end', 10) ),
+		GoalState('move_mouse', gs_move_mouse_to_object, ('check_hovered', 10), ('end', 10) ),
+		GoalStateCondition('check_hovered', lambda slot: game.hovered == slot.get_scheme_state()['mouse_move']['obj'], ('end', 10), ('tweak', 10) ),
+		GoalState('tweak', gs_tweak_mouse_pos, ('move_mouse', 10), ('end', 10) ),
+		GoalState('end', gs_wait_cb, ('end', 10)),
+	])
+	return cs
+
 def create_scheme_go_to_tile( loc ):
 	if type(loc) is tuple:
 		loc = location_from_axis( *loc )
 	cs = ControlScheme()
-	def is_moving_check(slot):
-		if slot.state is None: # initialize locs
-			slot.state = {}
-			for n in range(len(game.party)):
-				pc = game.party[n]
-				slot.state['pc%d' % n] = pc.location
-			slot.state['map'] = game.leader.map
-			return 1
-		
-		result = 0
-		for n in range(len(game.party)):
-			pc = game.party[n]
-			key = 'pc%d' % n
-			if key in slot.state:
-				prev_loc = slot.state[key]	
-				if prev_loc != pc.location:
-					result = 1
-					slot.state['pc%d' % n] = pc.location
-			else:
-				slot.state[key] = pc.location
-		return result
 
 	def arrived_at_check(slot):
 		#type: (GoalSlot)->int
@@ -899,13 +1045,13 @@ def create_scheme_go_to_tile( loc ):
 	
 	cs.__set_stages__([
 		GoalState('start', gs_select_all, ('check_loc', 500), ),
-		GoalState('check_loc', gs_condition, ('just_scroll', 100), ('scroll_and_click', 100), params={'param1': arrived_at_check}),
+		GoalStateCondition('check_loc', arrived_at_check, ('just_scroll', 100), ('scroll_and_click', 100), ),
 		GoalState('just_scroll', gs_center_on_tile, ('end', 700), params = {'param1': loc }),
 		
 		GoalState('scroll_and_click', gs_scroll_to_tile_and_click, ('is_moving_loop', 700), params = {'param1': loc }),
 		# GoalState('arrived_at', gs_condition, ('end', 0)        , ('is_moving_loop', 100), params={'param1': arrived_at_check}),
-		GoalState('is_moving_loop' , gs_condition, ('is_moving_loop', 800), ('check_arrived', 100), params={'param1': is_moving_check}),
-		GoalState('check_arrived', gs_condition, ('end', 0), ('start', 100), params={'param1': arrived_at_check}),
+		GoalStateCondition('is_moving_loop' , is_moving_check, ('is_moving_loop', 800), ('check_arrived', 100), ),
+		GoalStateCondition('check_arrived', arrived_at_check, ('end', 0), ('start', 100), ),
 		
 		GoalState('end', gs_wait_cb, ('end', 10), ),
 	])
@@ -914,35 +1060,74 @@ def create_scheme_go_to_tile( loc ):
 def create_scheme_enter_building( loc, tgt_map_id = None ): #TODO
 	cs = ControlScheme()
 	DOOR_ICON_PROTO = 2011
+	def gs_enter_building_init(slot):
+		#type: (GoalSlot)->int
+		if len(game.party) == 0 or game.leader == OBJ_HANDLE_NULL:
+			return 0
+		state = slot.get_scheme_state()
+		state['map_change_check'] = {'map':  game.leader.map }
+		if loc is None: # trying to click something nearby
+			obj = get_object( {'proto': DOOR_ICON_PROTO})
+			if obj != OBJ_HANDLE_NULL:
+				state['click_object'] = { 'obj_ref': {'proto': DOOR_ICON_PROTO, 'guid': obj.__getstate__()} }
+		else:
+			obj = get_object( {'proto': DOOR_ICON_PROTO, 'location': loc})
+			if obj != OBJ_HANDLE_NULL:
+				state['click_object'] = {'obj_ref': {'proto': DOOR_ICON_PROTO, 'guid': obj.__getstate__()} }
+		return 1
+	
 	def check_tgt_map(slot):
+		#type: (GoalSlot)->int
+		# check if scheme can be ended early (because already on the target map ID)
 		if tgt_map_id is None or tgt_map_id == -1:
 			return 1
-		if game.leader == OBJ_HANDLE_NULL:
+		if len(game.party) == 0 or game.leader == OBJ_HANDLE_NULL:
 			return 0
 		if game.leader.map == tgt_map_id:
-			return 0
-		return 1
-	if loc is None:
+			return 0 # already there, abort scheme
+		return 1 # needs to proceed with this scheme
+	
+
+	if loc is None: # no location given, try nearest door icon
 		cs.__set_stages__([
-			GoalState('start', gs_condition, ('click_door_icon', 100), ('end', 100), params={'param1': check_tgt_map}),
+			GoalState('start', gs_enter_building_init, ('check_tgt_map', 50), ('end', 50) ),
+
+			GoalStateCondition('check_tgt_map', check_tgt_map, ('select_all', 100), ('end', 100), ),
+			GoalState('select_all', gs_select_all, ('click_door_icon', 100), ),
 			# GoalState('go_to_loc', gs_create_and_push_scheme, ('click_door_icon', 500), params = {'param1': 'goto', 'param2': (create_scheme_go_to_tile, ( loc, ) ) }),
+
+			GoalState('refresh_select_all', gs_select_all, ('map_change_check', 100), ),
+			GoalState('map_change_check', gs_condition_map_change, ('end', 100), ('click_door_icon', 100) ),
 			GoalState('click_door_icon', gs_click_on_object, ('map_change_loop', 100), params={'param1': {'proto': DOOR_ICON_PROTO} }),
 			
-			GoalState('map_change_loop', gs_condition_map_change, ('end', 500), ),
+
+			
+			GoalState('map_change_loop', gs_condition_map_change, ('end', 200), ('moving_check', 500) ),
+			GoalState('moving_check', is_moving_check, ('moving_check', 500), ('refresh_select_all', 100) ),
+			
+
 			GoalState('end', gs_wait_cb, ('end', 500), ),	
 		])
 	else:
 		cs.__set_stages__([
-			GoalState('start', gs_condition, ('go_to_loc', 100), ('end', 100), params={'param1': check_tgt_map}),
-			GoalState('go_to_loc', gs_create_and_push_scheme, ('click_door_icon', 500), params = {'param1': 'goto', 'param2': (create_scheme_go_to_tile, ( loc, ) ) }),
+			GoalState('start', gs_enter_building_init, ('check_tgt_map', 50), ('end', 50) ),
+			GoalStateCondition('check_tgt_map', check_tgt_map, ('select_all', 100), ('end', 100),),
+			
+			GoalState('select_all', gs_select_all, ('go_to_loc', 200), ),
+			GoalState('go_to_loc', gs_create_and_push_scheme, ('refresh_select_all', 200), params = {'param1': 'goto', 'param2': (create_scheme_go_to_tile, ( loc, ) ) }),
+			
+			GoalState('refresh_select_all', gs_select_all, ('map_change_check', 100), ), # in case we get interrupted along the way
+			GoalState('map_change_check', gs_condition_map_change, ('end', 100), ('click_door_icon', 100) ),
 			GoalState('click_door_icon', gs_click_on_object, ('map_change_loop', 100), params={'param1': {'proto': DOOR_ICON_PROTO, 'loc': loc} }),
 			
-			GoalState('map_change_loop', gs_condition_map_change, ('end', 500), ),
+			GoalState('map_change_loop', gs_condition_map_change, ('end', 200), ('moving_check', 500) ),
+			GoalState('moving_check', is_moving_check, ('moving_check', 500), ('check_tgt_map', 100) ),
+
 			GoalState('end', gs_wait_cb, ('end', 500), ),
 		])
 	return cs
 
-def create_open_worldmap():
+def create_open_worldmap_ui():
 	cs = ControlScheme()
 	def gs_encounter_exit_dialog_active(slot):
 		wid = controller_ui_util.obtain_widget(WID_IDEN.RND_ENC_EXIT_UI_ACCEPT_BTN)
@@ -966,6 +1151,104 @@ def create_open_worldmap():
 		
 		GoalState('press_worldmap', gs_press_widget, ('end', 300), (), {'param1': WID_IDEN.TOWNMAP_UI_WORLD_BTN } ),
 		GoalState('end', gs_wait_cb, ('end', 100))
+	])
+	return cs
+
+def create_get_worldmap_access():
+	cs = ControlScheme()
+	worldmap_access_map_by_area = {
+		0: None,
+		4: TEMPLE_COURTYARD_MAP,
+	}
+	def gs_init_get_worldmap_access(slot):
+		# type: (GoalSlot)->int
+		state = slot.get_scheme_state()
+		cur_map = game.leader.map
+		if not (game.leader.area in worldmap_access_map_by_area):
+			return 0
+		tgt_map = worldmap_access_map_by_area[game.leader.area]
+		if tgt_map is None:
+			if cur_map == TEMPLE_TOWER_EXTERIOR_MAP:
+				tgt_map = TEMPLE_COURTYARD_MAP
+			return 0
+		map_course = get_map_course(cur_map, tgt_map)
+		state['access_worldmap'] = {
+			'cur_map': cur_map,
+			'cur_area': game.leader.area,
+			'tgt_map': tgt_map,
+			'map_course': map_course,
+			'next_loc': None,
+			'next_map': None,
+		}
+		return 1
+
+	def get_map_course(cur_map, tgt_map):
+		best_course = [cur_map,]
+		test_course = [cur_map,]
+		open_set = []
+		
+		cur_node = cur_map
+		dests = map_connectivity[cur_node]
+		while True:
+			valids = []
+			for map_id, loc in dests.items():
+				if map_id in best_course:
+					continue
+				valids.append( map_id )
+			
+			if len(valids) == 0:
+				best_course.pop()
+				continue
+			
+			for map_id in valids:
+				open_set.append( (cur_node, map_id) )
+			
+			if len(open_set) == 0:
+				break
+
+			cur_node, next_node = open_set.pop()
+			best_course.append(next_node)
+			if next_node == tgt_map:
+				return best_course
+			
+			dests = map_connectivity[next_node]
+
+		return best_course
+
+	def gs_configure_destination(slot):
+		# type: (GoalSlot)->int
+		state = slot.get_scheme_state()
+		cur_map = game.leader.map 
+		tgt_map = state['access_worldmap']['tgt_map']
+		
+		map_course = state['access_worldmap']['map_course']
+		if map_course is None:
+			return 0
+
+		
+		for idx,map_id in enumerate(map_course):
+			if map_id != cur_map:
+				continue
+			next_map = map_course[idx+1]
+			next_loc = map_connectivity[cur_map][next_map]
+
+			state['access_worldmap']['next_loc'] = next_loc
+			state['access_worldmap']['next_map'] = next_map
+			state['push_scheme']  = {
+				'id': 'get_worldmap_access_tmp', 
+				'callback': (create_scheme_enter_building, (next_loc, next_map))
+				}
+			return 1
+		
+		return 1
+
+	cs.__set_stages__([
+		GoalState('start', gs_init_get_worldmap_access, ('check_access_worldmap', 100), ),
+		GoalStateCondition('check_access_worldmap', lambda slot: can_access_worldmap(), ('end', 100), ('configure_destination', 100) ),
+		GoalState('configure_destination', gs_configure_destination, ('go_next', 100), ('end', 100), ),
+
+		GoalState('go_next', gs_create_and_push_scheme, ('check_access_worldmap', 100), ('end', 100), ),
+		GoalState('end', gs_wait_cb, ('end', 100), )
 	])
 	return cs
 
@@ -1028,7 +1311,7 @@ def create_goto_area(area_name, area_id = None):
 	cs.__set_stages__(
 		[
 			GoalState('start', gs_goto_area_init, ('check_outdoors',100 ), ),
-			GoalState('check_outdoors', gs_condition, ('open_worldmap', 500), ('end', 100), params={'param1': lambda slot: can_access_worldmap()} ) ,
+			GoalStateCondition('check_outdoors', lambda slot: can_access_worldmap(), ('open_worldmap', 500), ('end', 100), ) ,
 		
 			GoalState('open_worldmap', gs_push_scheme, ('find_acq_loc_btn', 100), params={'param1': 'open_worldmap'}),
 		
@@ -1050,7 +1333,6 @@ def create_goto_area(area_name, area_id = None):
 			GoalState('end', gs_wait_cb, ('end', 500), ) ,	
 		])
 	return cs
-
 
 def create_hommlet_scheme1():
 	cs = ControlScheme()
@@ -1162,23 +1444,177 @@ def create_brigand_tower_scheme():
 		return 1
 	def gs_brigand_tower_end(slot):
 		return 1
-	TEMPLE_COURTYARD_TO_TOWER_EXIT = (400, 470)
-	TEMPLE_TOWER_ENTRANCE_LOC      = (480, 500)
 	
-	TEMPLE_TOWER_EXTERIOR_MAP = 5111
-	TEMPLE_TOWER_INTERIOR_MAP = 5065
-	TEMPLE_COURTYARD_MAP = 5062
+	TEMPLE_TOWER_ENTRANCE_LOC      = (480, 500)
+	TEMPLE_TOWER_EXIT_LOC          = (485, 497) # from tower interior back to tower exterior map
+	
 	cs.__set_stages__([
 		GoalState('start', gs_brigand_tower_init, ('check_temple_area', 100), ),
 		GoalStateCondition('check_temple_area', lambda slot: game.leader.area == 4, ('check_temple_courtyard', 100), ('go_temple', 100), ),
 		GoalState('go_temple', gs_push_scheme, ('check_temple_courtyard', 100), params={'param1': 'goto_temple'}),
 		
 		GoalStateCondition('check_temple_courtyard', lambda slot: game.leader.map == TEMPLE_COURTYARD_MAP, ('go_temple_tower_map', 100), ('check_temple_tower_ext', 100), ),
-		GoalStateCreatePushScheme('go_temple_tower_map', 'go_temple_tower_map', create_scheme_enter_building, (TEMPLE_COURTYARD_TO_TOWER_EXIT, TEMPLE_TOWER_EXTERIOR_MAP ),('check_temple_tower_ext', 100) ),
+		GoalStateCreatePushScheme('go_temple_tower_map', 'go_temple_tower_exterior', create_scheme_enter_building, (map_connectivity[TEMPLE_COURTYARD_MAP][TEMPLE_TOWER_EXTERIOR_MAP], TEMPLE_TOWER_EXTERIOR_MAP ),('check_temple_tower_ext', 100) ),
 		
 		GoalStateCondition('check_temple_tower_ext', lambda slot: game.leader.map == TEMPLE_TOWER_EXTERIOR_MAP, ('go_temple_tower_interior', 100), ('go_temple', 100), ),
-		GoalStateCreatePushScheme('go_temple_tower_interior', 'go_temple_tower_map', create_scheme_enter_building, (TEMPLE_TOWER_ENTRANCE_LOC, TEMPLE_TOWER_INTERIOR_MAP ),('end', 100) ),
+		GoalStateCreatePushScheme('go_temple_tower_interior', 'go_temple_tower_interior', create_scheme_enter_building, (TEMPLE_TOWER_ENTRANCE_LOC, TEMPLE_TOWER_INTERIOR_MAP ),('check_temple_tower_int', 100) ),
+
+		GoalStateCondition('check_temple_tower_int', lambda slot: game.leader.map == TEMPLE_TOWER_INTERIOR_MAP, ('exit_tower', 100), ('check_temple_tower_ext2', 100), ),
+		GoalStateCreatePushScheme('exit_tower', 'exit_temple_tower', create_scheme_enter_building, (TEMPLE_TOWER_EXIT_LOC, TEMPLE_TOWER_EXTERIOR_MAP ), ('check_temple_tower_ext2', 100) ),
+
+		GoalStateCondition('check_temple_tower_ext2', lambda slot: game.leader.map == TEMPLE_TOWER_EXTERIOR_MAP, ('go_temple_courtyard', 100), ('end', 100), ),
+		GoalState('go_temple_courtyard', gs_push_scheme, ('end', 100), params={'param1': 'get_worldmap_access'} ),
 
 		GoalState('end', gs_brigand_tower_end, ('end', 100), )
 	])
 	return cs
+
+def get_obj_inventory(obj, lootable_only = True):
+	#type: (PyObjHandle, bool)->list[PyObjHandle]
+	result = []
+	if obj.is_critter():
+		inven_count = obj.obj_get_idx_obj_size(obj_f_critter_inventory_list_idx)
+		for i in range(0, inven_count):
+			item = obj.obj_get_idx_obj(obj_f_critter_inventory_list_idx, i)
+			if item == OBJ_HANDLE_NULL:
+				continue
+			if lootable_only and (item.obj_get_int(obj_f_item_flags) & OIF_NO_LOOT) != 0:
+				continue
+			result.append(item)
+	elif obj.type == obj_t_container:
+		inven_count = obj.obj_get_idx_obj_size(obj_f_container_inventory_list_idx)
+		for i in range(0, inven_count):
+			item = obj.obj_get_idx_obj(obj_f_container_inventory_list_idx, i)
+			if item == OBJ_HANDLE_NULL:
+				continue
+			if lootable_only and (item.obj_get_int(obj_f_item_flags) & OIF_NO_LOOT) != 0:
+				continue
+			result.append(item)
+	else:
+		return result
+	return result
+
+def gs_loot_after_combat(slot):
+	# type: (GoalSlot)->int
+	if slot.state is None:
+		# init
+		slot.state = {
+			'lootable_critters': []
+		}
+		for obj in game.obj_list_vicinity(game.leader.location, OLC_NPC):
+			if obj in game.party:
+				continue
+			if not obj.is_unconscious():
+				continue
+			inventory = get_obj_inventory(obj)
+			if len(inventory) == 0:
+				continue
+			slot.state['lootable_critters'].append(obj)
+	
+	state = slot.state
+	
+	if len(state['lootable_critters']) == 0:
+		return 1
+	if SKIP_LOOTING:
+		return 1
+	
+	obj = state['lootable_critters'].pop()
+	cs = create_loot_critter_scheme(obj)
+	Playtester.get_instance().add_scheme(cs, 'loot_critter')
+	Playtester.get_instance().push_scheme('loot_critter')
+	return 0
+
+def create_loot_critter_scheme(obj):
+	#type: (PyObjHandle)->ControlScheme
+	cs = ControlScheme()
+	WID_ID_LOOT_ALL_BTN   = WID_IDEN.CHAR_LOOTING_UI_TAKE_ALL_BTN
+	WID_ID_EXIT_INVENTORY = WID_IDEN.CHAR_UI_MAIN_EXIT
+	WID_ID_INVEN_FULL     = WID_IDEN.POPUP_UI_OK_BTN
+	WID_ID_KEY_ENTRY      = WID_IDEN.LOGBOOK_UI_KEY_ENTRY_ACCEPT
+
+	def gs_loot_critter_init(slot):
+		#type: (GoalSlot)->int
+		state = slot.get_scheme_state()
+		state['loot_critter'] = {
+			'obj': obj,
+			'looters_full': [],
+			'looter_priority': [x for x in range(0, len(game.party)) if game.party[x].type == obj_t_pc]
+		}
+		state['click_object'] = {
+			'obj_ref': {'guid': obj.__getstate__(), 'location': obj.location }
+		}
+		
+		# sort by strength, descending
+		def sort_key(x):
+			strength = game.party[x].stat_base_get(stat_strength)
+			return strength
+		
+		state['loot_critter']['looter_priority'].sort(key=sort_key, reverse=True)
+		return 1
+
+	def gs_check_lootable(slot):
+		# type: (GoalSlot)->int
+		if not obj.is_unconscious():
+			return 0
+		inventory = get_obj_inventory(obj)
+		for item in inventory:
+			if item.type == obj_t_money:
+				return 1
+			if item.type in [obj_t_armor , obj_t_weapon]:
+				if item.obj_get_int(obj_f_item_worth) < 10: # less than 1 silver - skip
+					continue
+			# more criteria?
+			return 1
+		return 0
+	
+	def gs_mark_looter_full(slot):
+		# type: (GoalSlot)->int
+		state = slot.get_scheme_state()
+		for x in state['loot_critter']['looter_priority']:
+			if x in state['loot_critter']['looters_full']:
+				continue
+			state['loot_critter']['looters_full'].append(x)
+			return 1
+		return 1
+
+	def gs_select_looter(slot):
+		# type: (GoalSlot)->int
+		state = slot.get_scheme_state()
+		for x in state['loot_critter']['looter_priority']:
+			if x in state['loot_critter']['looters_full']:
+				continue
+			select_party(x)
+			return 1
+		return 0
+
+	cs.__set_stages__([
+		# TODO: prioritize mules / unburdened
+		GoalState('start', gs_loot_critter_init, ('check_lootable_inventory', 100),  ),
+		
+		GoalStateCondition('check_lootable_inventory', gs_check_lootable, ('select_all', 100), ('end', 100)),
+
+		GoalState('select_all', gs_select_all, ('click_object', 100)),
+		GoalState('click_object', gs_click_on_object, ('wait_for_inventory_loop', 100), ('end', 100) ),
+
+		GoalState('wait_for_inventory_loop', gs_is_widget_visible, ('select_looter', 100), ('check_is_moving', 100), params={'param1': WID_ID_LOOT_ALL_BTN}),
+		GoalState('check_is_moving', is_moving_check, ('check_is_moving', 100), ('wait_for_inventory_loop', 100), ),
+
+		GoalState('select_looter', gs_select_looter, ('press_loot_all', 100), ('exit_inventory', 100)),
+		GoalState('press_loot_all', gs_press_widget, ('check_inventory_full_dlg', 100), params={'param1': WID_ID_LOOT_ALL_BTN}),
+
+
+		# GoalState('check_can_proceed', gs_wait_cb, ('check_inventory_full_dlg', 100), ), # note: I've checked that both the below dialogus cannot occur at the same time (getting the key requires actually transferring it, so it won't happen if the inventory gets filled up)
+		GoalState('check_inventory_full_dlg', gs_is_widget_visible, ('inventory_full_ok', 100), ('check_key_entry_dlg', 100), params={'param1': WID_ID_INVEN_FULL}),
+		GoalState('inventory_full_ok', gs_press_widget, ('mark_loot_full', 100), params={'param1': WID_ID_INVEN_FULL}),
+
+		GoalState('check_key_entry_dlg', gs_is_widget_visible, ('press_key_entry_accept', 100),('exit_inventory', 100), params={'param1': WID_ID_KEY_ENTRY}),
+		GoalState('press_key_entry_accept', gs_press_widget, ('exit_inventory', 100), params={'param1': WID_ID_KEY_ENTRY}),
+		
+		GoalState('mark_loot_full', gs_mark_looter_full, ('select_looter', 100), ),
+		
+		
+		GoalState('exit_inventory', gs_press_widget, ('end', 100), params={'param1': WID_ID_EXIT_INVENTORY}),
+		GoalState('end', gs_wait_cb, ('end', 10),  ),
+	])
+	return cs
+#endregion

@@ -37,6 +37,9 @@ def press_quickload():
     press_key(DIK_F9)
 
 def select_party(idx):
+    ''' selects party member [idx]\n
+    idx starts at 0
+    '''
     press_key(DIK_1 + idx)
 def select_all():
     press_key(DIK_GRAVE)
@@ -156,6 +159,12 @@ class WID_IDEN:
     RND_ENC_UI_ACCEPT_BTN = [('random_encounter_ui_main_window',), ('random_encounter_accept_butn')]
     RND_ENC_EXIT_UI_ACCEPT_BTN = [('random_encounter_ui_exit_window',), ('random_encounter_exit_ok_button')]
 
+    CHAR_UI_MAIN_EXIT = [('char_ui_main_exit_window',), ('char_ui_main_exit_button', ) ]
+    CHAR_LOOTING_UI_TAKE_ALL_BTN = [('char_looting_ui_main_window', ), ('char_looting_ui_take_all_button',)]
+    POPUP_UI_OK_BTN = [('popup_ui_main_window',), ('popup_ui_button', ), 0]
+
+    LOGBOOK_UI_KEY_ENTRY_ACCEPT = [('logbook_ui_keys_key_entry_window', ), ('logbook_ui_key_entry_accept_butn',)]
+
     
 
 def get_window_rect(name = "Temple of Elemental Evil (Temple+)"):
@@ -208,11 +217,11 @@ def move_mouse_to_loc(loc):
     move_mouse(x,y)
     return
 
-def move_mouse_to_obj(obj):
+def move_mouse_to_obj(obj, off_x = 0, off_y = 0):
     # loc = obj.location
     # game.mouse_move_to(loc)
     x,y = tpgui.world_to_screen(obj.location_full)
-    move_mouse(x,y)
+    move_mouse(x + off_x,y + off_y)
     return
 
 def click_on_obj(obj):

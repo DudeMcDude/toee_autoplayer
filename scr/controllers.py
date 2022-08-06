@@ -429,6 +429,7 @@ class ControllerBase:
         return
 
     def schedule(self, delay_msec = 200, real_time = 1):
+        print('ControllerBase.schedule: timevent_add')
         game.timevent_add( self.execute, (), delay_msec, real_time)
         return
     
