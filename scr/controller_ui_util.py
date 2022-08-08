@@ -22,6 +22,10 @@ DIK_SPACE = 57
 DIK_F12 = 88 # quicksave
 DIK_F9 = 67  # quickload
 
+MB_LEFT   = 0
+MB_RIGHT  = 1
+MB_MIDDLE = 2
+
 def press_key(key):
     game.keypress(key)
 

@@ -1,7 +1,7 @@
 from controller_ui_util import WID_IDEN
 from toee import *
 from toee import PySpellStore, game
-from controllers import ControlScheme, GoalState, ControllerBase, GoalStateCondition, GoalStateCreatePushScheme
+from controllers import ControlScheme, GoalState, GoalStateStart,GoalStateEnd, ControllerBase, GoalStateCondition, GoalStateCreatePushScheme
 from controller_callbacks_common import *
 from utilities import *
 import autoui as aui
@@ -10,9 +10,10 @@ import tpdp
 import gamedialog as dlg
 import logbook
 
-PLAYTEST_EN = False
-SKIP_LOOTING = True
-INITIAL_LOAD = 0 # which save game to load on game start; set -1 to start new game
+PLAYTEST_EN  = False
+SKIP_LOOTING = False
+INITIAL_LOAD = 3 # which save game to load on game start; set -1 to start new game
+LOGGING_EN   = False
 
 
 HOMMLET_EXTERIOR_MAP      = 5001
@@ -131,8 +132,8 @@ def gs_master(slot):
 					slot.state['rest_needed'] = False
 					pt.push_scheme('rest')
 					return 0
-				random_schemes = ['goto_nulb', 'goto_brigand_tower']
-				# random_schemes = [ 'goto_brigand_tower']
+				# random_schemes = ['goto_nulb', 'goto_brigand_tower']
+				random_schemes = [ 'goto_brigand_tower']
 				# random_schemes = [ 'goto_nulb']
 				random_choice  = game.random_range(0, len(random_schemes)-1)
 				pt.push_scheme(random_schemes[random_choice])
@@ -168,7 +169,7 @@ def gs_master(slot):
 def setup_playtester(autoplayer):
 	#type: (Playtester)->None
 	autoplayer = autoplayer #type: ControllerBase
-	autoplayer.__logging__ = True
+	autoplayer.__logging__ = LOGGING_EN
 	from controller_console import ControllerConsole
 	autoplayer.console = ControllerConsole(autoplayer)
 
@@ -206,7 +207,7 @@ def setup_playtester(autoplayer):
 def create_master_scheme():
 	cs = ControlScheme()
 	cs.__set_stages__( [
-		GoalState('start', gs_master, ('end', 500) ),
+		GoalStateStart( gs_master, ('end', 500) ),
 		GoalState('end', gs_master, ('start', 500), ('start',500) )
 	])
 	return cs
@@ -353,7 +354,7 @@ def combat_handler(slot):
 		return 1
 
 	cs.__set_stages__([
-		GoalState('start',gs_combat_init, ('combat_loop', 100), ('end', 100),  ),
+		GoalStateStart(gs_combat_init, ('combat_loop', 100), ('end', 100),  ),
 		GoalState('combat_loop', gs_combat_action_handler, ('combat_loop', 100), ('loot_critters', 100),  ),
 		GoalState('loot_critters', gs_loot_after_combat, ('equip_best', 100),  ),
 		GoalState('equip_best', gs_item_wield_best_all, ('end', 100) ),
@@ -808,7 +809,7 @@ def create_party_pool_add_pc_scheme():
 
 	cs.__set_stages__([
 		
-		GoalState('start', gs_scan_get_widget_from_list, ('check_result', 100), (), {'param1': wid_list, 'param2': check_widget } ),
+		GoalStateStart( gs_scan_get_widget_from_list, ('check_result', 100), (), {'param1': wid_list, 'param2': check_widget } ),
 		GoalState('check_result', gs_found, ('press_char_btn', 100), ('end', 300),  ),
 		GoalState('press_char_btn', gs_press_widget, ('press_add', 200), (), {'param1': None } ),
 		
@@ -820,7 +821,7 @@ def create_party_pool_add_pc_scheme():
 def create_new_game_scheme():
 	cs = ControlScheme()
 	cs.__set_stages__( [
-		GoalState('start', gs_press_widget, ('normaldiff', 500), (), {'param1': WID_IDEN.NEW_GAME } ),
+		GoalStateStart( gs_press_widget, ('normaldiff', 500), (), {'param1': WID_IDEN.NEW_GAME } ),
 		GoalState('normaldiff', gs_press_widget, ('select_true_neutral_alignment', 500), (), {'param1': WID_IDEN.NORMAL_DIFF } ),
 		GoalState('select_true_neutral_alignment', gs_press_widget, ('party_alignment_accept', 800), (), {'param1': WID_IDEN.TRUE_NEUTRAL_BTN_WID_ID } ),
 		GoalState('party_alignment_accept', gs_press_widget, ('add_party_members', 300), (), {'param1': WID_IDEN.PARTY_ALIGNMENT_ACCEPT_BTN } ),
@@ -853,7 +854,7 @@ def create_load_game_scheme(save_idx = 1):
 	load_entry_wid_id[-1] = save_idx
 	
 	cs.__set_stages__( [
-		GoalState('start', gs_is_main_menu, ('main_menu_load', 100), ('ingame_load', 100) ),
+		GoalStateStart( gs_is_main_menu, ('main_menu_load', 100), ('ingame_load', 100) ),
 
 		GoalState('main_menu_load', gs_press_widget, ('load_game_entry_1', 200), (), {'param1': WID_IDEN.MAIN_MENU_LOAD_GAME}),
 		GoalState('load_game_entry_1', gs_press_widget, ('load_it', 200), (), {'param1': load_entry_wid_id}),
@@ -875,7 +876,7 @@ def create_shop_map_scheme():
 	cs = ControlScheme()
 	std_chest_dlg_choices = [0, 0,1]
 	cs.__set_stages__(
-		[ GoalState('start', gs_wait_cb, ('equipment_chests', 300) ), ] +
+		[ GoalStateStart( gs_wait_cb, ('equipment_chests', 300) ), ] +
 		GoalState.from_sequence('equipment_chests', [
 			GoalState('', gs_click_to_talk, ('', 100), (), {'param1': {'proto': 14575, } } ),
 			GoalState('', gs_handle_dialogue_prescripted, ('', 500), (), {'param1': std_chest_dlg_choices } ),
@@ -895,7 +896,7 @@ def create_true_neutral_scheme():
 	
 	druid_dlg_choices = [0, 0,0,0,0]
 	cs.__set_stages__( 
-		[GoalState('start', gs_wait_cb, ('talk_jaroo', 500)),] +
+		[GoalStateStart( gs_wait_cb, ('talk_jaroo', 500)),] +
 		GoalState.from_sequence('talk_jaroo', [
 			GoalState('', gs_scroll_to_tile, ('', 3500), params = {'param1': (488, 474) }),
 			GoalState('', gs_click_to_talk, ('', 3000), params = {'param1': {'proto': 14322, 'location': location_from_axis(488, 474)}} ),
@@ -941,7 +942,7 @@ def create_rest_scheme():
 
 	cs = ControlScheme()
 	cs.__set_stages__([
-		GoalState('start', init_rest_scheme, ('check_map', 100),  ),
+		GoalStateStart( init_rest_scheme, ('check_map', 100),  ),
 		GoalState('check_map', gs_condition, ('start_resting', 100), ('go_building', 100), params={'param1': check_map} ),
 		
 		GoalState('go_building', gs_create_and_push_scheme, ('start_resting', 500),('end', 100)  ),
@@ -955,7 +956,7 @@ def create_ui_camp_rest_scheme():
 	cs = ControlScheme()
 	cs.__set_stages__(
 		[
-		GoalState('start', gs_wait_cb, ('click_camp', 100), ) ,] +
+		GoalStateStart( gs_wait_cb, ('click_camp', 100), ) ,] +
 		GoalState.from_sequence('click_camp', [
 			GoalState('', gs_press_widget, ('', 500), (), {'param1': WID_IDEN.UTIL_BAR_CAMP_BTN } ),
 			GoalState('', gs_press_widget, ('', 500), (), {'param1': WID_IDEN.CAMPING_UI_UNTIL_HEALED_BTN } ),
@@ -975,6 +976,7 @@ def create_move_mouse_to_obj(obj_ref):
 			'obj': obj,
 			'tweak_x': 0,
 			'tweak_y': 0,
+			'tweak_amount': 3,
 		}
 		if obj == OBJ_HANDLE_NULL:
 			return 0
@@ -996,9 +998,16 @@ def create_move_mouse_to_obj(obj_ref):
 		state = slot.get_scheme_state()
 		x = state['mouse_move']['tweak_x']
 		y = state['mouse_move']['tweak_y']
+		amount = state['mouse_move']['tweak_amount']
 		radius = max( abs(x), abs(y) )
 		
-		amount = 3
+		if radius > 20: # try a finer grained search
+			if amount == 1:
+				return 0
+			state['mouse_move']['tweak_amount'] = 1
+			state['mouse_move']['tweak_x'] = 0
+			state['mouse_move']['tweak_y'] = 0
+			return 1
 
 		if x == 0 and y == -radius: # end position: top
 			state['mouse_move']['tweak_x'] = amount
@@ -1029,7 +1038,7 @@ def create_move_mouse_to_obj(obj_ref):
 		return 1
 
 	cs.__set_stages__([
-		GoalState('start', gs_init_move_mouse, ('move_mouse', 10), ('end', 10) ),
+		GoalStateStart( gs_init_move_mouse, ('move_mouse', 10), ('end', 10) ),
 		GoalState('move_mouse', gs_move_mouse_to_object, ('check_hovered', 10), ('end', 10) ),
 		GoalStateCondition('check_hovered', lambda slot: game.hovered == slot.get_scheme_state()['mouse_move']['obj'], ('end', 10), ('tweak', 10) ),
 		GoalState('tweak', gs_tweak_mouse_pos, ('move_mouse', 10), ('end', 10) ),
@@ -1072,7 +1081,7 @@ def create_scheme_go_to_tile( loc ):
 		return 1
 	
 	cs.__set_stages__([
-		GoalState('start', gs_select_all, ('check_loc', 500), ),
+		GoalStateStart( gs_select_all, ('check_loc', 500), ),
 		GoalStateCondition('check_loc', arrived_at_check, ('just_scroll', 100), ('scroll_and_click', 100), ),
 		GoalState('just_scroll', gs_center_on_tile, ('end', 700), params = {'param1': loc }),
 		
@@ -1118,7 +1127,7 @@ def create_scheme_enter_building( loc, tgt_map_id = None ): #TODO
 
 	if loc is None: # no location given, try nearest door icon
 		cs.__set_stages__([
-			GoalState('start', gs_enter_building_init, ('check_tgt_map', 50), ('end', 50) ),
+			GoalStateStart( gs_enter_building_init, ('check_tgt_map', 50), ('end', 50) ),
 
 			GoalStateCondition('check_tgt_map', check_tgt_map, ('select_all', 100), ('end', 100), ),
 			GoalState('select_all', gs_select_all, ('click_door_icon', 100), ),
@@ -1138,7 +1147,7 @@ def create_scheme_enter_building( loc, tgt_map_id = None ): #TODO
 		])
 	else:
 		cs.__set_stages__([
-			GoalState('start', gs_enter_building_init, ('check_tgt_map', 50), ('end', 50) ),
+			GoalStateStart( gs_enter_building_init, ('check_tgt_map', 50), ('end', 50) ),
 			GoalStateCondition('check_tgt_map', check_tgt_map, ('select_all', 100), ('end', 100),),
 			
 			GoalState('select_all', gs_select_all, ('go_to_loc', 200), ),
@@ -1164,7 +1173,7 @@ def create_open_worldmap_ui():
 		return 1
 	cs.__set_stages__([
 		# check if already there
-		GoalState('start', gs_is_widget_visible, ('end', 100), ('is_townmap_ui', 100), params={'param1': WID_IDEN.WORLDMAP_UI_SELECTION_BTNS[0]} ),
+		GoalStateStart( gs_is_widget_visible, ('end', 100), ('is_townmap_ui', 100), params={'param1': WID_IDEN.WORLDMAP_UI_SELECTION_BTNS[0]} ),
 		# no, so check if the townmap ui is active
 		GoalState('is_townmap_ui', gs_is_widget_visible, ('press_worldmap', 100), ('click_utilitybar_map', 100), params={'param1': WID_IDEN.TOWNMAP_UI_WORLD_BTN} ) ,
 		
@@ -1279,7 +1288,7 @@ def create_get_worldmap_access():
 		return 1
 
 	cs.__set_stages__([
-		GoalState('start', gs_init_get_worldmap_access, ('check_access_worldmap', 100), ),
+		GoalStateStart( gs_init_get_worldmap_access, ('check_access_worldmap', 100), ),
 		GoalStateCondition('check_access_worldmap', lambda slot: can_access_worldmap(), ('end', 100), ('configure_destination', 100) ),
 		GoalState('configure_destination', gs_configure_destination, ('go_next', 100), ('end', 100), ),
 
@@ -1346,7 +1355,7 @@ def create_goto_area(area_name, area_id = None):
 
 	cs.__set_stages__(
 		[
-			GoalState('start', gs_goto_area_init, ('check_outdoors',100 ), ),
+			GoalStateStart( gs_goto_area_init, ('check_outdoors',100 ), ),
 			GoalStateCondition('check_outdoors', lambda slot: can_access_worldmap(), ('open_worldmap', 500), ('end', 100), ) ,
 		
 			GoalState('open_worldmap', gs_push_scheme, ('find_acq_loc_btn', 100), params={'param1': 'open_worldmap'}),
@@ -1405,7 +1414,7 @@ def create_hommlet_scheme1():
 
 	cs.__set_stages__(
 		[
-		GoalState('start', gs_condition, ('go_jaroo', 100), ('start2', 100), params={'param1': lambda slot: game.leader.map == 5001}),
+		GoalStateStart( gs_condition, ('go_jaroo', 100), ('start2', 100), params={'param1': lambda slot: game.leader.map == 5001}),
 		GoalState('start2', gs_condition, ('handle_jaroo', 100), ('start', 100), params={'param1': lambda slot: game.leader.map == 5042}), # wait until this is fulfilled
 		
 		GoalState('go_jaroo', gs_create_and_push_scheme, ('handle_jaroo', 100), params={'param1': 'go_grove', 'param2': (create_scheme_enter_building, (GROVE_ENTRANCE_LOC,5042) ) })
@@ -1445,7 +1454,7 @@ def create_hommlet_scheme0():
 
 	cs.__set_stages__( 
 		[
-		GoalState('start', gs_condition, ('go_inn', 100), ('handle_inn', 100), params={'param1': lambda slot: game.leader.map == 5001}),
+		GoalStateStart( gs_condition, ('go_inn', 100), ('handle_inn', 100), params={'param1': lambda slot: game.leader.map == 5001}),
 		GoalState('go_inn', gs_create_and_push_scheme, ('handle_inn', 100), params={'param1': 'go_wench', 'param2': (create_scheme_enter_building, (WENCH_DOOR_ENTRANCE_LOC, 5007) )}),
 		] +
 		
@@ -1474,29 +1483,48 @@ def create_hommlet_scheme0():
 
 def create_brigand_tower_scheme():
 	cs = ControlScheme()
+	
 	def gs_brigand_tower_init(slot):
-		if game.leader == OBJ_HANDLE_NULL:
+		# type: (GoalSlot)->int
+		if len(game.party) == 0:
 			return 0
+		state = slot.get_scheme_state()
+		state['tower_brigands'] = {'quicksave_counter': 0}
+		return 1
+	def gs_make_quicksave(slot):
+		# type: (GoalSlot)->int
+		state = slot.get_scheme_state()
+		state['tower_brigands']['quicksave_counter'] += 1
+		press_quicksave()
+		return 1
+	def gs_make_quickload(slot):
+		# type: (GoalSlot)->int
+		press_quickload()
 		return 1
 	def gs_brigand_tower_end(slot):
 		return 1
 	
-	TEMPLE_TOWER_ENTRANCE_LOC      = (480, 500)
 	TEMPLE_TOWER_EXIT_LOC          = (485, 497) # from tower interior back to tower exterior map
 	
 	cs.__set_stages__([
-		GoalState('start', gs_brigand_tower_init, ('check_temple_area', 100), ),
+		GoalStateStart( gs_brigand_tower_init, ('check_temple_area', 100), ),
 		GoalStateCondition('check_temple_area', lambda slot: game.leader.area == 4, ('check_temple_courtyard', 100), ('go_temple', 100), ),
 		GoalState('go_temple', gs_push_scheme, ('check_temple_courtyard', 100), params={'param1': 'goto_temple'}),
 		
 		GoalStateCondition('check_temple_courtyard', lambda slot: game.leader.map == TEMPLE_COURTYARD_MAP, ('go_temple_tower_map', 100), ('check_temple_tower_ext', 100), ),
 		GoalStateCreatePushScheme('go_temple_tower_map', 'go_temple_tower_exterior', create_scheme_enter_building, (map_connectivity[TEMPLE_COURTYARD_MAP][TEMPLE_TOWER_EXTERIOR_MAP], TEMPLE_TOWER_EXTERIOR_MAP ),('check_temple_tower_ext', 100) ),
 		
-		GoalStateCondition('check_temple_tower_ext', lambda slot: game.leader.map == TEMPLE_TOWER_EXTERIOR_MAP, ('go_temple_tower_interior', 100), ('go_temple', 100), ),
-		GoalStateCreatePushScheme('go_temple_tower_interior', 'go_temple_tower_interior', create_scheme_enter_building, (TEMPLE_TOWER_ENTRANCE_LOC, TEMPLE_TOWER_INTERIOR_MAP ),('check_temple_tower_int', 100) ),
+		GoalStateCondition('check_temple_tower_ext', lambda slot: game.leader.map == TEMPLE_TOWER_EXTERIOR_MAP, ('make_quicksave_check', 100), ('go_temple', 100), ),
+		GoalStateCondition('make_quicksave_check', lambda slot: slot.get_scheme_state()['tower_brigands']['quicksave_counter'] < 5, ('make_quicksave', 100), ('go_temple_tower_interior', 100)),
+		GoalState('make_quicksave', gs_make_quicksave, ('go_temple_tower_interior', 100)),
+		GoalStateCreatePushScheme('go_temple_tower_interior', 'go_temple_tower_interior', create_scheme_enter_building, (map_connectivity[TEMPLE_TOWER_EXTERIOR_MAP][TEMPLE_TOWER_INTERIOR_MAP], TEMPLE_TOWER_INTERIOR_MAP ),('await_combat', 100) ),
+
+		GoalState('await_combat', gs_wait_cb, ('make_quickload_check', 2000)),
+		GoalState('make_quickload_check', lambda slot: slot.get_scheme_state()['tower_brigands']['quicksave_counter'] < 5, ('make_quickload', 100), ('check_temple_tower_int', 100)),
+		GoalState('make_quickload', gs_make_quickload, ('check_temple_tower_ext', 5000)),
 
 		GoalStateCondition('check_temple_tower_int', lambda slot: game.leader.map == TEMPLE_TOWER_INTERIOR_MAP, ('exit_tower', 100), ('check_temple_tower_ext2', 100), ),
-		GoalStateCreatePushScheme('exit_tower', 'exit_temple_tower', create_scheme_enter_building, (TEMPLE_TOWER_EXIT_LOC, TEMPLE_TOWER_EXTERIOR_MAP ), ('check_temple_tower_ext2', 100) ),
+		GoalStateCreatePushScheme('exit_tower', 'exit_temple_tower', create_scheme_enter_building, (map_connectivity[TEMPLE_TOWER_INTERIOR_MAP][TEMPLE_TOWER_EXTERIOR_MAP], TEMPLE_TOWER_EXTERIOR_MAP ), ('check_temple_tower_ext2', 100) ),
 
 		GoalStateCondition('check_temple_tower_ext2', lambda slot: game.leader.map == TEMPLE_TOWER_EXTERIOR_MAP, ('go_temple_courtyard', 100), ('end', 100), ),
 		GoalState('go_temple_courtyard', gs_push_scheme, ('end', 100), params={'param1': 'get_worldmap_access'} ),
@@ -1625,7 +1653,7 @@ def create_loot_critter_scheme(obj):
 
 	cs.__set_stages__([
 		# TODO: prioritize mules / unburdened
-		GoalState('start', gs_loot_critter_init, ('check_lootable_inventory', 100),  ),
+		GoalStateStart( gs_loot_critter_init, ('check_lootable_inventory', 100),  ),
 		
 		GoalStateCondition('check_lootable_inventory', gs_check_lootable, ('select_all', 100), ('end', 100)),
 
@@ -1650,7 +1678,34 @@ def create_loot_critter_scheme(obj):
 		
 		
 		GoalState('exit_inventory', gs_press_widget, ('end', 100), params={'param1': WID_ID_EXIT_INVENTORY}),
-		GoalState('end', gs_wait_cb, ('end', 10),  ),
+		GoalStateEnd( gs_wait_cb, ('end', 10),  ),
+	])
+	return cs
+
+def create_barter_ui_sell_loot():
+	cs = ControlScheme()
+	def gs_init_barter_sell(slot):
+		# type: (GoalSlot)->int
+		return 1
+	def gs_select_inventory_item_slot(slot):
+		# type: (GoalSlot)->int
+		state = slot.get_scheme_state()
+		return 1
+	def gs_select_container_item_slot(slot):
+		# type: (GoalSlot)->int
+		state = slot.get_scheme_state()
+		return 1
+	cs.__set_stages__([
+		GoalStateStart( gs_init_barter_sell, ),
+		GoalState('check_inventory_ui_open', gs_is_widget_visible, ('select_inventory_item', 100), ('end', 100), params={'param1': WID_IDEN.CHAR_BARTER_UI_IDENTIFY_BTN}),
+		GoalState('select_inventory_item', gs_select_inventory_item_slot, (), ('move_mouse', 100), ),
+		GoalState('move_mouse', gs_move_mouse_to_widget, (), ('end', 100), ),
+		GoalState('mouse_down', gs_lmb_down, ('select_container_item_slot', 100),  ),
+		GoalState('select_container_item_slot', gs_select_container_item_slot, (), ('move_mouse', 100), ),
+		GoalState('move_mouse', gs_move_mouse_to_widget, ('mouse_up', 100), ('end', 100), ),
+		GoalState('mouse_up', gs_lmb_up, ('check_inventory_ui_open', 100),  ),
+		# handle "won't buy that item"
+		GoalStateEnd( gs_wait_cb, ('end', 10), )
 	])
 	return cs
 #endregion

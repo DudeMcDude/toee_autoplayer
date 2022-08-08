@@ -85,7 +85,8 @@ def gs_select_all(slot):
 #region widget callbacks
 def gs_move_mouse_to_widget(slot):
 	# type: (GoalSlot)->int
-	'''param1 - widget identifier
+	'''param1 - widget identifier\n
+	alternative:\n
 	scheme_state {'wid_id': TWidgetIdentifier}
 	'''
 	wid_identifier = slot.param1
@@ -136,6 +137,13 @@ def gs_press_widget(slot):
 		click_mouse()
 		return 1
 	return 0
+
+def gs_lmb_down(slot):
+	game.mouse_set_button_state(MB_LEFT, 1)
+	return 1
+def gs_lmb_up(slot):
+	game.mouse_set_button_state(MB_LEFT, 0)
+	return 1
 
 #endregion widget callbacks
 

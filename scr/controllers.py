@@ -92,6 +92,16 @@ class GoalState(GoalStateCb):
             result.append(state)
         return result
 
+class GoalStateStart(GoalState):
+    def __init__(self, cb, after_s, after_f = None, params = None, state = None):
+        GoalState.__init__(self, ControlScheme.START_STAGE_ID, cb, after_s, after_f, params, state )
+        return
+
+class GoalStateEnd(GoalState):
+    def __init__(self, cb, after_s, after_f = None, params = None, state = None):
+        GoalState.__init__(self, ControlScheme.END_STAGE_ID, cb, after_s, after_f, params, state )
+        return
+
 class GoalStateCondition(GoalState):
     def __init__(self, id, condition_cb, after_s, after_f):    
         GoalState.__init__(self, id, lambda slot: condition_cb(slot) != 0, after_s, after_f,  )
