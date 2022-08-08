@@ -87,7 +87,7 @@ def gs_move_mouse_to_widget(slot):
 	# type: (GoalSlot)->int
 	'''param1 - widget identifier\n
 	alternative:\n
-	scheme_state {'wid_id': TWidgetIdentifier}
+	scheme_state {'widget_scan': {'wid_id': TWidgetIdentifier} }
 	'''
 	wid_identifier = slot.param1
 	

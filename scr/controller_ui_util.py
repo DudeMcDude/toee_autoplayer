@@ -167,6 +167,10 @@ class WID_IDEN:
 
     CHAR_UI_MAIN_EXIT = [('char_ui_main_exit_window',), ('char_ui_main_exit_button', ) ]
     CHAR_LOOTING_UI_TAKE_ALL_BTN = [('char_looting_ui_main_window', ), ('char_looting_ui_take_all_button',)]
+    CHAR_LOOTING_UI_BTNS = [ [('char_looting_ui_loot_window_%0.2d' % x ,),] for x in range(0, 12) ]
+
+    CHAR_UI_INVENTORY_BTNS = [ [('char_inventory_ui_inv_window_%0.2d' % x , ),] for x in range(0, 24) ]
+
     POPUP_UI_OK_BTN = [('popup_ui_main_window',), ('popup_ui_button', ), 0]
 
     LOGBOOK_UI_KEY_ENTRY_ACCEPT = [('logbook_ui_keys_key_entry_window', ), ('logbook_ui_key_entry_accept_butn',)]

@@ -1682,22 +1682,40 @@ def create_loot_critter_scheme(obj):
 	])
 	return cs
 
-def create_barter_ui_sell_loot():
+def create_barter_ui_sell_loot(obj):
+	#type: (PyObjHandle)->None
 	cs = ControlScheme()
 	def gs_init_barter_sell(slot):
 		# type: (GoalSlot)->int
+		state = slot.get_scheme_state()
+		state['selling_loot'] = {
+			'slot_to_sell': []
+		}
+		for idx in range(0, 24):
+			item = obj.inventory_item(idx)
+			if item == OBJ_HANDLE_NULL:
+				continue
+			if item.obj_get_int
+			state['selling_loot']['slot_to_sell'].append(idx)
+			pass
 		return 1
 	def gs_select_inventory_item_slot(slot):
 		# type: (GoalSlot)->int
 		state = slot.get_scheme_state()
+		state['selling_loot']
+		wid_idx = 0
+		state['widget_scan'] = {
+			'wid_id' : 0,
+		}
 		return 1
 	def gs_select_container_item_slot(slot):
 		# type: (GoalSlot)->int
 		state = slot.get_scheme_state()
 		return 1
 	cs.__set_stages__([
-		GoalStateStart( gs_init_barter_sell, ),
-		GoalState('check_inventory_ui_open', gs_is_widget_visible, ('select_inventory_item', 100), ('end', 100), params={'param1': WID_IDEN.CHAR_BARTER_UI_IDENTIFY_BTN}),
+		GoalStateStart( gs_init_barter_sell, ('check_inventory_ui_open', 100), ('end', 100)),
+
+		GoalState('check_inventory_ui_open', gs_is_widget_visible, ('select_inventory_item', 100), ('end', 100), params={'param1': WID_IDEN.CHAR_LOOTING_UI_TAKE_ALL_BTN}), # same widget is used for both looting and barter
 		GoalState('select_inventory_item', gs_select_inventory_item_slot, (), ('move_mouse', 100), ),
 		GoalState('move_mouse', gs_move_mouse_to_widget, (), ('end', 100), ),
 		GoalState('mouse_down', gs_lmb_down, ('select_container_item_slot', 100),  ),
@@ -1705,6 +1723,7 @@ def create_barter_ui_sell_loot():
 		GoalState('move_mouse', gs_move_mouse_to_widget, ('mouse_up', 100), ('end', 100), ),
 		GoalState('mouse_up', gs_lmb_up, ('check_inventory_ui_open', 100),  ),
 		# handle "won't buy that item"
+		
 		GoalStateEnd( gs_wait_cb, ('end', 10), )
 	])
 	return cs

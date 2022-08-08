@@ -29,8 +29,11 @@ class PyObjHandle:
         return PyObjHandle()
     def obj_get_idx_obj_size(self, obj_f_):
         return 0
-    
+    def inventory_item(self, idx):
+        return PyObjHandle()
     def cast_spell(self, spell_enum, tgt = OBJ_HANDLE_NULL):
         
+        return 0
+    def is_unconscious(self):
         return 0
     pass
