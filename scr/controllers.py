@@ -264,10 +264,14 @@ class ControlScheme:
         assert s.get('start') is not None, "'stages' Must have 'start' stage"
         for stage_id, stage in self.__stages__.items(): # type: (int, GoalState)
             stage = stage # type: GoalState # this line is just for intellisense...
+            if stage.after_success is None:
+                print('Error! after_success is None')
+                exit()
             next_id = stage.after_success.new_state
             if self.__stages__.get(next_id) is None:
                 print('Error! stage %s could not find next ID = (%s) ' % (stage.id ,str(next_id)))
                 exit()
+            
         return
 
     def __repr__(self):

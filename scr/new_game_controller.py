@@ -10,9 +10,9 @@ import tpdp
 import gamedialog as dlg
 import logbook
 
-PLAYTEST_EN  = False
+PLAYTEST_EN  = True
 SKIP_LOOTING = False
-INITIAL_LOAD = 3 # which save game to load on game start; set -1 to start new game
+INITIAL_LOAD = 1 # which save game to load on game start; set -1 to start new game
 LOGGING_EN   = False
 
 
@@ -138,8 +138,8 @@ def gs_master(slot):
 					pt.push_scheme('sell_loot')
 					return 0
 				# random_schemes = ['goto_nulb', 'goto_brigand_tower']
-				random_schemes = [ 'goto_brigand_tower']
-				# random_schemes = [ 'goto_nulb']
+				# random_schemes = [ 'goto_brigand_tower']
+				random_schemes = [ 'goto_nulb']
 				random_choice  = game.random_range(0, len(random_schemes)-1)
 				pt.push_scheme(random_schemes[random_choice])
 				return 0
@@ -1702,27 +1702,40 @@ def create_barter_ui_sell_loot(obj):
 		state['selling_loot'] = {
 			'slots_to_sell': []
 		}
+		try:
+			x = list(game.party).index(obj)
+			if x >= 0:
+				print('Selecting party member %s to sell loot' % game.party[x])
+				select_party(x)
+		except ValueError:
+			print('Could not find %s in party' % str(obj))
+		
 		for idx in range(0, 24):
 			item = obj.inventory_item(idx)
 			if item == OBJ_HANDLE_NULL:
 				continue
+			# print('item idx = 0 is %s' % str(item))
 			item_flags = item.obj_get_int(obj_f_item_flags)
 			if item_flags & OIF_IS_MAGICAL:
+				if (item_flags & OIF_IDENTIFIED) == 0:
+					continue
 				continue # for now..
-			if (item_flags & OIF_IDENTIFIED == 0):
+			if (item_flags & OIF_WONT_SELL) != 0:
 				continue
-			if (item_flags & OIF_WONT_SELL):
-				continue
+			if item.obj_get_int(obj_f_item_worth) < 10: # less than 1 silver - skip
+					continue
 			state['selling_loot']['slots_to_sell'].append(idx)
-			pass
+		
 		return 1
 	def gs_select_inventory_item_slot(slot):
 		# type: (GoalSlot)->int
 		state = slot.get_scheme_state()
 		slots_to_sell = state['selling_loot']['slots_to_sell']
+		# print('slots_to_sell: %s' % str(slots_to_sell))
 		if len(slots_to_sell) == 0:
 			return 0
 		wid_idx = state['selling_loot']['slots_to_sell'].pop()
+		# print('wid_idx: %d' % wid_idx)
 		wid_id = WID_IDEN.CHAR_UI_INVENTORY_BTNS[wid_idx]
 		state['widget_scan'] = {
 			'wid_id' : wid_id,
@@ -1740,12 +1753,12 @@ def create_barter_ui_sell_loot(obj):
 		GoalStateStart( gs_init_barter_sell, ('check_inventory_ui_open', 100), ('end', 100)),
 
 		GoalState('check_inventory_ui_open', gs_is_widget_visible, ('select_inventory_item', 100), ('end', 100), params={'param1': WID_IDEN.CHAR_LOOTING_UI_TAKE_ALL_BTN}), # same widget is used for both looting and barter
-		GoalState('select_inventory_item', gs_select_inventory_item_slot, (), ('move_mouse', 100),('end', 100) ),
-		GoalState('move_mouse', gs_move_mouse_to_widget, (), ('end', 100), ),
+		GoalState('select_inventory_item', gs_select_inventory_item_slot, ('move_mouse', 100),('end', 100) ),
+		GoalState('move_mouse', gs_move_mouse_to_widget, ('mouse_down', 330), ('end', 100), ),
 		GoalState('mouse_down', gs_lmb_down, ('select_container_item_slot', 100),  ),
-		GoalState('select_container_item_slot', gs_select_container_item_slot, (), ('move_mouse', 100), ),
-		GoalState('move_mouse', gs_move_mouse_to_widget, ('mouse_up', 100), ('end', 100), ),
-		GoalState('mouse_up', gs_lmb_up, ('check_inventory_ui_open', 100),  ),
+		GoalState('select_container_item_slot', gs_select_container_item_slot, ('move_mouse_to_container', 200), ),
+		GoalState('move_mouse_to_container', gs_move_mouse_to_widget, ('mouse_up', 330), ('end', 100), ),
+		GoalState('mouse_up', gs_lmb_up, ('check_inventory_ui_open', 330),  ),
 		# handle "won't buy that item" or maybe no room..
 		
 		GoalStateEnd( gs_wait_cb, ('end', 10), )
