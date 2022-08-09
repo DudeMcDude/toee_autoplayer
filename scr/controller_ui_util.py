@@ -139,7 +139,7 @@ class WID_IDEN:
     INGAME_LOAD_GAME = [  ('', 'templeplus/ui/main_menu.json'), ('pages', 'templeplus/ui/main_menu.json'), 
      ('page-ingame-normal', 'templeplus/ui/main_menu.json'),   ('ingame-normal-load', 'templeplus/ui/main_menu.json')  
     ]
-    LOAD_GAME_ENTRY_BTNS = [ [('loadgame_ui.c 327'), ('loadgame_ui.c 448'), x+1 ] for x in range(0,8)]
+    LOAD_GAME_ENTRY_BTNS = [ [('loadgame_ui.c 327'), ('loadgame_ui.c 448'), x ] for x in range(0,8)]
     LOAD_GAME_LOAD_BTN = [ ('loadgame_ui.c 327'), ('loadgame_ui.c 351'), ]
     UTIL_BAR_CAMP_BTN = [ ('utility_bar_ui.c 481',), None, 4]
     UTIL_BAR_MAP_BTN = [ ('utility_bar_ui.c 481',), None, 3]

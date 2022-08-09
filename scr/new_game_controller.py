@@ -13,7 +13,7 @@ import logbook
 PLAYTEST_EN  = True
 SKIP_LOOTING = False
 START_NEW_GAME = False
-INITIAL_LOAD = ['Did some rounds',]
+INITIAL_LOAD = ['Did some rounds', 'Fighting!']
 LOGGING_EN   = False
 
 
