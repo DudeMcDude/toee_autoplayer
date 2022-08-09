@@ -83,6 +83,58 @@ def gs_select_all(slot):
 
 
 #region widget callbacks
+
+def gs_scan_get_widget_from_list(slot):
+	#type: (GoalSlot)->int
+	''' 
+	param1 - widget identifier list\n
+	param2 - condition callback. signature: cb(slot)->bool\n
+	scheme_state { 'widget_scan': 
+					{ 'idx': int, 
+					  'found': bool, 
+					  'wid_id': TWidgetIdentifier} 
+				    }
+	'''
+	wid_list = slot.param1
+	condition = slot.param2
+	state = slot.get_scheme_state()
+	
+	state['widget_scan'] = {
+			'idx': -1,
+			'found': False,
+			'wid_id': None
+		}
+	# todo: scrolling
+
+	for idx in range(len(wid_list)):
+		state['widget_scan']['idx'] = idx
+		# print('scan_get_widget: idx %d' % idx)
+		try:
+			# print('trying to obtain widget: %s' % str(wid_list[idx]))
+			wid = controller_ui_util.obtain_widget(wid_list[idx])
+		except Exception as e:
+			wid = None
+			# print('Failed!')
+			print(str(e))
+			# print(str(e.__traceback__))
+
+		if wid is None:
+			# print('Wid is None!')
+			continue
+		# print('obtained: %s, now checking condition' % str(wid))
+		if callable(condition):
+			res = condition(slot)
+			if res:	
+				state['widget_scan']['found'] = True
+				state['widget_scan']['wid_id'] = wid_list[idx]
+				# print(str(wid))
+				return 1
+			# else:
+				# print('condition failed!')
+		# else:
+			# print('what happened to you, condition? %s' % str(condition))
+	
+	return 1
 def gs_move_mouse_to_widget(slot):
 	# type: (GoalSlot)->int
 	'''param1 - widget identifier\n
@@ -113,7 +165,7 @@ def gs_is_widget_visible(slot):
 
 def gs_press_widget(slot):
 	# type: (GoalSlot)->int
-	'''param1 - widget identifier
+	'''param1 - widget identifier\n
 	scheme_state { 'widget_scan': { 'wid_id': TWidgetIdentifier}
 				 }
 	'''

@@ -12,7 +12,8 @@ import logbook
 
 PLAYTEST_EN  = True
 SKIP_LOOTING = False
-INITIAL_LOAD = 1 # which save game to load on game start; set -1 to start new game
+START_NEW_GAME = False
+INITIAL_LOAD = ['Did some rounds',]
 LOGGING_EN   = False
 
 
@@ -97,7 +98,7 @@ def gs_master(slot):
 	
 	
 	if gs_is_main_menu(slot):
-		if INITIAL_LOAD >= 0:
+		if not START_NEW_GAME:
 			pt.add_scheme( create_load_game_scheme(INITIAL_LOAD), 'load_game' )
 			pt.push_scheme('load_game')
 		else:
@@ -137,9 +138,9 @@ def gs_master(slot):
 					slot.state['sell_loot_needed'] = False
 					pt.push_scheme('sell_loot')
 					return 0
-				# random_schemes = ['goto_nulb', 'goto_brigand_tower']
+				random_schemes = ['goto_nulb', 'goto_brigand_tower']
 				# random_schemes = [ 'goto_brigand_tower']
-				random_schemes = [ 'goto_nulb']
+				# random_schemes = [ 'goto_nulb']
 				random_choice  = game.random_range(0, len(random_schemes)-1)
 				pt.push_scheme(random_schemes[random_choice])
 				return 0
@@ -180,7 +181,6 @@ def setup_playtester(autoplayer):
 	autoplayer.console = ControllerConsole(autoplayer)
 
 	autoplayer.add_scheme( create_new_game_scheme(), 'new_game' )
-	autoplayer.add_scheme( create_load_game_scheme(), 'load_game' )
 	autoplayer.add_scheme( create_true_neutral_scheme(), 'true_neutral_vig' )
 	autoplayer.add_scheme( create_hommlet_scheme0(), 'hommlet0')
 	autoplayer.add_scheme( create_ui_camp_rest_scheme(), 'ui_camp_rest' )
@@ -555,60 +555,7 @@ def gs_is_main_menu(slot):
 	if wid is None:
 		# print('is_main_menu: false')
 		return 0
-	return 1
-
-def gs_scan_get_widget_from_list(slot):
-	#type: (GoalSlot)->int
-	''' 
-	param1 - widget identifier list\n
-	param2 - condition callback. signature: cb(slot)->bool\n
-	scheme_state { 'widget_scan': 
-					{ 'idx': int, 
-					  'found': bool, 
-					  'wid_id': TWidgetIdentifier} 
-				    }
-	'''
-	wid_list = slot.param1
-	condition = slot.param2
-	state = slot.get_scheme_state()
-	
-	state['widget_scan'] = {
-			'idx': -1,
-			'found': False,
-			'wid_id': None
-		}
-	# todo: scrolling
-
-	for idx in range(len(wid_list)):
-		state['widget_scan']['idx'] = idx
-		# print('scan_get_widget: idx %d' % idx)
-		try:
-			# print('trying to obtain widget: %s' % str(wid_list[idx]))
-			wid = controller_ui_util.obtain_widget(wid_list[idx])
-		except Exception as e:
-			wid = None
-			# print('Failed!')
-			print(str(e))
-			# print(str(e.__traceback__))
-
-		if wid is None:
-			# print('Wid is None!')
-			continue
-		# print('obtained: %s, now checking condition' % str(wid))
-		if callable(condition):
-			res = condition(slot)
-			if res:	
-				state['widget_scan']['found'] = True
-				state['widget_scan']['wid_id'] = wid_list[idx]
-				# print(str(wid))
-				return 1
-			# else:
-				# print('condition failed!')
-		# else:
-			# print('what happened to you, condition? %s' % str(condition))
-	
-	return 1
-	
+	return 1	
 
 def gs_move_mouse_to_object(slot):
 	# print('gs_move_mouse_to_object')
@@ -648,7 +595,6 @@ def gs_scroll_to_tile_and_click(slot):
 		click_mouse()
 		return 1
 	return 0
-
 
 def gs_click_on_object(slot):
 	#type: (GoalSlot)->int
@@ -730,7 +676,6 @@ def gs_click_to_talk(slot):
 	Playtester.get_instance().dialog_handler_en(False) # halt the automatic dialogue handler
 	return gs_click_on_object(slot)
 	
-
 def gs_handle_dialogue(slot):
 	'''
 	param1 - callback(ds, presets, slot.state)-> reply idx[int]\n
@@ -774,7 +719,6 @@ def gs_handle_dialogue(slot):
 	reply = reply_cb(ds, presets, slot.state)
 	dlg_reply(reply)
 	return 0
-
 
 #endregion
 
@@ -854,28 +798,51 @@ def create_new_game_scheme():
 	])
 	return cs
 
-def create_load_game_scheme(save_idx = 1):
+def create_load_game_scheme(save_id):
 	cs = ControlScheme()
-	if save_idx < 0:
-		save_idx = 0
-	if save_idx > 7:
-		save_idx = 7
+	if type(save_id) == int:
+		save_idx = save_id
+		if save_idx < 0:
+			save_idx = 0
+		if save_idx > 7:
+			save_idx = 7
+	else:
+		save_idx = None
+		assert (type(save_id) is str) or (type(save_id) is list) or (type(save_id) is tuple), "must be str or tuple/list"
 	
-	load_entry_wid_id = WID_IDEN.LOAD_GAME_ENTRY_1
-	load_entry_wid_id[-1] = save_idx
-	
+	wid_list = WID_IDEN.LOAD_GAME_ENTRY_BTNS
+	def match_load_game(slot):
+		# type: (GoalSlot)->int
+		state = slot.get_scheme_state()
+		idx = state['widget_scan']['idx']
+		widget = wid_list[idx]
+		wid = controller_ui_util.obtain_widget(wid_list[idx])
+		if wid is None:
+			return 0
+		if save_idx is not None:
+			return idx == save_idx
+		if type(save_id) is str:
+			if wid.rendered_text.lower().find(save_id.lower()) >= 0:
+				return 1
+		elif type(save_id) in [list, tuple]:
+			for x in save_id:
+				if wid.rendered_text.lower().find(x.lower()) >= 0:
+					return 1
+		return 0
+
 	cs.__set_stages__( [
 		GoalStateStart( gs_is_main_menu, ('main_menu_load', 100), ('ingame_load', 100) ),
-
-		GoalState('main_menu_load', gs_press_widget, ('load_game_entry_1', 200), (), {'param1': WID_IDEN.MAIN_MENU_LOAD_GAME}),
-		GoalState('load_game_entry_1', gs_press_widget, ('load_it', 200), (), {'param1': load_entry_wid_id}),
-		GoalState('load_it', gs_press_widget, ('end', 200), (), {'param1': WID_IDEN.LOAD_GAME_LOAD_BTN}),
+		
+		# main menu load
+		GoalState('main_menu_load', gs_press_widget, ('load_game_find_entry', 200), (), {'param1': WID_IDEN.MAIN_MENU_LOAD_GAME}),
+		GoalState('load_game_find_entry',gs_scan_get_widget_from_list, ('load_game_entry', 100), ('end', 100), params={'param1':wid_list, 'param2': match_load_game }),
 		
 		GoalState('ingame_load', gs_is_widget_visible, ('ingame_press_load', 200), ('ingame_bring_up_menu', 100), {'param1': WID_IDEN.INGAME_LOAD_GAME}),
 		GoalState('ingame_bring_up_menu', gs_press_key, ('ingame_load', 100), ('ingame_load', 100) , params={'param1': DIK_ESCAPE}),
+		GoalState('ingame_press_load', gs_press_widget, ('ingame_load_game_find_entry', 200), (), {'param1': WID_IDEN.INGAME_LOAD_GAME}),
+		GoalState('ingame_load_game_find_entry',gs_scan_get_widget_from_list, ('load_game_entry', 100), ('end', 100), params={'param1':wid_list, 'param2': match_load_game }),
 		
-		GoalState('ingame_press_load', gs_press_widget, ('ingame_load_game_entry', 200), (), {'param1': WID_IDEN.INGAME_LOAD_GAME}),
-		GoalState('ingame_load_game_entry', gs_press_widget, ('load_it', 200), (), {'param1': load_entry_wid_id}),
+		GoalState('load_game_entry', gs_press_widget, ('load_it', 200), ),
 		GoalState('load_it', gs_press_widget, ('end', 200), (), {'param1': WID_IDEN.LOAD_GAME_LOAD_BTN}),
 		
 		
