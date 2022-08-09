@@ -87,6 +87,7 @@ def gs_master(slot):
 		slot.state = {
 			'counter': 0,
 			'rest_needed': False,
+			'sell_loot_needed': False,
 			'try_go_outside_counter': 0
 		}
 		
@@ -132,6 +133,10 @@ def gs_master(slot):
 					slot.state['rest_needed'] = False
 					pt.push_scheme('rest')
 					return 0
+				if slot.state['sell_loot_needed']:
+					slot.state['sell_loot_needed'] = False
+					pt.push_scheme('sell_loot')
+					return 0
 				# random_schemes = ['goto_nulb', 'goto_brigand_tower']
 				random_schemes = [ 'goto_brigand_tower']
 				# random_schemes = [ 'goto_nulb']
@@ -153,6 +158,7 @@ def gs_master(slot):
 				pt.push_scheme('get_worldmap_access')
 				return 0
 			slot.state['rest_needed'] = True
+			slot.state['sell_loot_needed'] = True
 			pt.push_scheme('goto_hommlet')
 			return 0
 		
@@ -180,6 +186,7 @@ def setup_playtester(autoplayer):
 	autoplayer.add_scheme( create_ui_camp_rest_scheme(), 'ui_camp_rest' )
 	autoplayer.add_scheme( create_open_worldmap_ui(), 'open_worldmap')
 	autoplayer.add_scheme( create_rest_scheme(), 'rest' )
+	autoplayer.add_scheme( create_sell_loot(), 'sell_loot')
 
 	autoplayer.add_scheme( create_shop_map_scheme(), 'shopmap' )
 	autoplayer.add_scheme( create_master_scheme(), 'main' )
@@ -725,6 +732,10 @@ def gs_click_to_talk(slot):
 	
 
 def gs_handle_dialogue(slot):
+	'''
+	param1 - callback(ds, presets, slot.state)-> reply idx[int]\n
+	param2 - presets [dict]\n
+	'''
 	# param1 - callback for handling current dialogue state
 	if slot.state is None:
 		slot.state = {
@@ -1745,7 +1756,7 @@ def gs_sell_loot(slot):
 	# type: (GoalSlot)->int
 	if slot.state is None:
 		slot.state = {
-			'need_to_sell': list(game.party)
+			'need_to_sell': [x for x in game.party if x.type == obj_t_pc]
 		}
 	state = slot.state
 	
@@ -1753,7 +1764,29 @@ def gs_sell_loot(slot):
 		return 1
 	obj = state['need_to_sell'].pop()
 	cs = create_barter_ui_sell_loot(obj)
-	Playtester.get_instance().add_scheme(cs, 'loot_sell')
-	Playtester.get_instance().push_scheme('loot_sell')
+	Playtester.get_instance().add_scheme(cs, 'loot_sell_ui')
+	Playtester.get_instance().push_scheme('loot_sell_ui')
 	return 1
+
+def create_sell_loot():
+	cs = ControlScheme()
+	def smyth_barterer(ds, presets, state):
+		#type: (dlg.DialogState, dict, dict)->int
+		N = ds.reply_count
+		idx = find_barter_line(ds)
+		if idx >= 0:
+			return idx
+		return 0
+	cs.__set_stages__([
+		GoalStateStart(gs_wait_cb, ('talk_to_smyth', 100), ),
+		
+		GoalState('talk_to_smyth', gs_center_on_tile, ('talk2', 500), params = {'param1': (582, 434) }),
+		GoalState('talk2', gs_click_to_talk, ('talk3', 100), params = {'param1': {'proto': 14010, 'location': location_from_axis(582, 434)}} ),
+		GoalState('talk3', gs_handle_dialogue, ('sell', 500), (), {'param1': smyth_barterer, 'param2': {} } ),
+		GoalState('sell', gs_sell_loot, ('exit_barter_ui', 500),  ),
+		GoalState('exit_barter_ui', gs_press_widget, ('end', 100), params={'param1': WID_IDEN.CHAR_UI_MAIN_EXIT}),
+
+		GoalStateEnd( gs_wait_cb, ('end', 100))
+	])
+	return cs
 #endregion

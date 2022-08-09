@@ -294,6 +294,14 @@ def find_attack_lines(dlg_state):
 			attack_lines.append(i)
 	return attack_lines
 
+def find_barter_line(dlg_state):
+	#type: (dlg.DialogState)->list
+	N = dlg_state.reply_count
+	for i in range(N):
+		effect = dlg_state.get_reply_effect(i)
+		if effect.find('B:') >= 0:
+			return i
+	return -1
 
 def dlg_reply_nonattack(ds):
 	#type: (dlg.DialogState)-> int
