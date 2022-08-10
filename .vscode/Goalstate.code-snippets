@@ -25,5 +25,24 @@
 			"\treturn 1"
 		],
 		"description": "goalstate callback"
+	},
+
+	"create_control_scheme": {
+		"scope": "python",
+		"prefix": "create_, def create_",
+		"body": [
+			"def create_():",
+			"\tdef gs_init(slot):",
+			"\t\t#type: (GoalSlot)->int",
+			"\t\treturn 1",
+			"\tcs = ControlScheme()",
+			"\tcs.__set_stages__([",
+			"\t  GoalStateStart(gs_init, ('STAGE', 100),('end', 100) ),",
+			"\t  GoalState(),",
+			"\t  GoalStateEnd(gs_wait_cb, ('end', 100), ),",
+			"\t])",
+			"\treturn cs"
+		],
+		"description": "control scheme generator"
 	}
 }

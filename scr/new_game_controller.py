@@ -14,7 +14,7 @@ PLAYTEST_EN  = True
 SKIP_LOOTING = False
 START_NEW_GAME = False
 INITIAL_LOAD = ['Did some rounds', 'Fighting!']
-LOGGING_EN   = False
+LOGGING_EN   = True
 
 
 HOMMLET_EXTERIOR_MAP      = 5001
@@ -119,7 +119,8 @@ def gs_master(slot):
 			pt.add_scheme( create_hommlet_scheme1(), 'hommlet1' )
 			pt.push_scheme('hommlet1')
 			return 0
-		
+		# pt.push_scheme('prebuff')
+		# return 0
 		
 		leader = game.leader
 
@@ -187,6 +188,8 @@ def setup_playtester(autoplayer):
 	autoplayer.add_scheme( create_open_worldmap_ui(), 'open_worldmap')
 	autoplayer.add_scheme( create_rest_scheme(), 'rest' )
 	autoplayer.add_scheme( create_sell_loot(), 'sell_loot')
+	autoplayer.add_scheme( create_prebuff(), 'prebuff')
+	
 
 	autoplayer.add_scheme( create_shop_map_scheme(), 'shopmap' )
 	autoplayer.add_scheme( create_master_scheme(), 'main' )
@@ -219,7 +222,82 @@ def create_master_scheme():
 	])
 	return cs
 
+def create_prebuff():
+	self_buffs = [spell_mage_armor, spell_shield_of_faith]
+	def gs_init(slot):
+		#type: (GoalSlot)->int
+		state = slot.get_scheme_state()
+		state['prebuff'] = {
+			'casters': [x for x in game.party if obj_is_caster(x)],
+			'casters_cast': {},
+			
+			'cur_caster': OBJ_HANDLE_NULL,
+			'spell': None,
+			'cast_target': OBJ_HANDLE_NULL,
+		}
+		if len(state['prebuff']['casters']) == 0:
+			return 0
+		state['prebuff']['cur_caster'] = state['prebuff']['casters'][-1]
+		return 1
+	
+	def gs_switch_to_next(slot):
+		# type: (GoalSlot)->int
+		state = slot.get_scheme_state()['prebuff']
+		state['casters'].pop()
+		# print("casters: ", state['casters'])
+		if len(state['casters']) == 0:
+			return 0
+		return 1
 
+	def gs_configure_prebuff(slot):
+		# type: (GoalSlot)->int
+		state = slot.get_scheme_state()
+		caster = state['prebuff']['casters'][-1] #type: PyObjHandle
+		state['prebuff']['cur_caster'] = caster
+		state['prebuff']['spell'] = None
+
+		arcane_class = caster.highest_arcane_class
+		divine_class = caster.highest_divine_class
+		
+		spells_known_enums  = [x.spell_enum for x in caster.spells_known]
+		spells_known_levels = [x.spell_level for x in caster.spells_known]
+		
+		for sp in caster.spells_known:
+			if not sp.spell_enum in self_buffs:
+				continue
+			if not obj_can_cast(caster, sp.spell_enum, sp.spell_class, sp.spell_level):
+				continue
+			
+			state['prebuff']['cast_target'] = caster
+			state['prebuff']['spell'] = sp
+			break
+		
+		if state['prebuff']['spell'] is None:
+			return 0
+		return 1
+	
+	def gs_cast_prebuff(slot):
+		# type: (GoalSlot)->int
+		state = slot.get_scheme_state()['prebuff']
+		caster = state['cur_caster'] #type: PyObjHandle
+		spell  = state['spell'] #type: PySpellStore 
+		tgt    = state['cast_target']
+		caster.cast_spell(spell.spell_enum, tgt)
+		party_idx = list(game.party).index(caster)
+		state['casters_cast'][party_idx] = [spell,]
+		return 1
+
+	cs = ControlScheme()
+	cs.__set_stages__([
+	  GoalStateStart(gs_init, ('configure_prebuff', 300),('end', 100) ),
+	  
+	  GoalState('configure_prebuff', gs_configure_prebuff, ('cast_prebuff', 300), ('next_prebuffer', 100)),
+	  GoalState('cast_prebuff', gs_cast_prebuff, ('next_prebuffer', 1000), ('end', 100) ),
+	  GoalState('next_prebuffer', gs_switch_to_next, ('configure_prebuff', 100), ('end', 100),),
+	  
+	  GoalStateEnd(gs_wait_cb, ('end', 100), ),
+	])
+	return cs
 
 class DialogHandler:
 	cb = None
@@ -419,11 +497,7 @@ def combat_action_handler(slot):
 		return 500
 	# TODO charmed/confused PC.. 
 
-	def obj_is_caster(obj):
-		#type: (PyObjHandle)->bool
-		res = len(obj.spells_known) > 0
-		return res
-
+	
 	def is_out_of_ammo(obj):
 		if obj.item_worn_at(item_wear_ammo) == OBJ_HANDLE_NULL:
 			return True
@@ -441,15 +515,6 @@ def combat_action_handler(slot):
 		weap = attachee.item_worn_at(3)
 		return is_ranged_weapon(weap)
 	
-	def can_cast(spell_enum, spell_class, spell_level):
-		sp = PySpellStore( spell_enum , spell_class, spell_level)
-		result = obj.can_cast_spell(sp)
-		if not result:
-			return False
-		if sp.is_naturally_cast():
-			if not obj.spontaneous_spells_remaining(sp.spell_class, sp.spell_level): # TODO this disregard that sorcs can cast at a higher level..
-				return False
-		return True
 
 	import tpactions
 	actor = tpactions.get_current_tb_actor()
@@ -489,7 +554,7 @@ def combat_action_handler(slot):
 				sp_entry = tpdp.SpellEntry(spell.spell_enum)
 				is_offensive = ( sp_entry.ai_spell_type & (1 << 1) ) != 0
 				spell_range = sp_entry.get_spell_range_exact(spell.spell_level, obj)
-				if not can_cast(spell.spell_enum, spell.spell_class, spell.spell_level):
+				if not obj_can_cast(obj,spell.spell_enum, spell.spell_class, spell.spell_level):
 					continue
 				
 				if is_offensive:
@@ -1495,6 +1560,7 @@ def create_brigand_tower_scheme():
 		GoalStateCondition('check_temple_tower_ext', lambda slot: game.leader.map == TEMPLE_TOWER_EXTERIOR_MAP, ('make_quicksave_check', 100), ('go_temple', 100), ),
 		GoalStateCondition('make_quicksave_check', lambda slot: slot.get_scheme_state()['tower_brigands']['quicksave_counter'] < 5, ('make_quicksave', 100), ('go_temple_tower_interior', 100)),
 		GoalState('make_quicksave', gs_make_quicksave, ('go_temple_tower_interior', 100)),
+		GoalState('do_prebuff', gs_push_scheme, ('go_temple_tower_interior', 100), params={'param1': 'prebuff'}),
 		GoalStateCreatePushScheme('go_temple_tower_interior', 'go_temple_tower_interior', create_scheme_enter_building, (map_connectivity[TEMPLE_TOWER_EXTERIOR_MAP][TEMPLE_TOWER_INTERIOR_MAP], TEMPLE_TOWER_INTERIOR_MAP ),('await_combat', 100) ),
 
 		GoalState('await_combat', gs_wait_cb, ('make_quickload_check', 2000)),
@@ -1573,7 +1639,7 @@ def create_loot_critter_scheme(obj):
 	WID_ID_EXIT_INVENTORY = WID_IDEN.CHAR_UI_MAIN_EXIT
 	WID_ID_INVEN_FULL     = WID_IDEN.POPUP_UI_OK_BTN
 	WID_ID_KEY_ENTRY      = WID_IDEN.LOGBOOK_UI_KEY_ENTRY_ACCEPT
-
+	obj_loc = obj.location
 	def gs_loot_critter_init(slot):
 		#type: (GoalSlot)->int
 		state = slot.get_scheme_state()
@@ -1635,7 +1701,8 @@ def create_loot_critter_scheme(obj):
 		
 		GoalStateCondition('check_lootable_inventory', gs_check_lootable, ('select_all', 100), ('end', 100)),
 
-		GoalState('select_all', gs_select_all, ('click_object', 100)),
+		GoalState('select_all', gs_select_all, ('center_on_target', 100)),
+		GoalState('center_on_target', gs_center_on_tile, ('click_object', 330), params={'param1': obj_loc}),
 		GoalState('click_object', gs_click_on_object, ('wait_for_inventory_loop', 100), ('end', 100) ),
 
 		GoalState('wait_for_inventory_loop', gs_is_widget_visible, ('select_looter', 100), ('check_is_moving', 100), params={'param1': WID_ID_LOOT_ALL_BTN}),

@@ -199,7 +199,7 @@ def gs_lmb_up(slot):
 
 #endregion widget callbacks
 
-
+#region navigation
 def gs_scroll_to_tile(slot):
 	loc = slot.param1
 	if type(loc) is tuple:
@@ -210,6 +210,9 @@ def gs_scroll_to_tile(slot):
 	return 1
 
 def gs_center_on_tile(slot):
+	'''
+	param1 - loc ( obj.location or (x,y) tuple)
+	'''
 	loc = slot.param1
 	center_screen_on( loc )
 	return 1
@@ -328,9 +331,9 @@ def gs_arrive_at_tile(slot):
 		if t_el > RETRY_TIME:
 			slot.state = None # this will retry the click and scroll
 	return 0
+#endregion
 
-
-
+#region dialogue funcs
 def dlg_reply(i):
 	print('Reply %d' % (i))
 	press_key(DIK_1 + i)
@@ -423,7 +426,22 @@ def gs_handle_dialogue_prescripted(slot):
 	slot.state['reply_counter'] += 1
 	dlg_reply(0)
 	return 0
+#endregion
 
+def obj_is_caster(obj):
+	#type: (PyObjHandle)->bool
+	res = len(obj.spells_known) > 0
+	return res
+
+def obj_can_cast(obj, spell_enum, spell_class, spell_level):
+	sp = PySpellStore( spell_enum , spell_class, spell_level)
+	result = obj.can_cast_spell(sp)
+	if not result:
+		return False
+	if sp.is_naturally_cast():
+		if not obj.spontaneous_spells_remaining(sp.spell_class, sp.spell_level): # TODO this disregard that sorcs can cast at a higher level..
+			return False
+	return True
 
 def gs_leader_perform_on_target(slot):
 	obj = game.leader
