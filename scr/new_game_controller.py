@@ -1558,8 +1558,8 @@ def create_brigand_tower_scheme():
 		GoalStateCreatePushScheme('go_temple_tower_map', 'go_temple_tower_exterior', create_scheme_enter_building, (map_connectivity[TEMPLE_COURTYARD_MAP][TEMPLE_TOWER_EXTERIOR_MAP], TEMPLE_TOWER_EXTERIOR_MAP ),('check_temple_tower_ext', 100) ),
 		
 		GoalStateCondition('check_temple_tower_ext', lambda slot: game.leader.map == TEMPLE_TOWER_EXTERIOR_MAP, ('make_quicksave_check', 100), ('go_temple', 100), ),
-		GoalStateCondition('make_quicksave_check', lambda slot: slot.get_scheme_state()['tower_brigands']['quicksave_counter'] < 5, ('make_quicksave', 100), ('go_temple_tower_interior', 100)),
-		GoalState('make_quicksave', gs_make_quicksave, ('go_temple_tower_interior', 100)),
+		GoalStateCondition('make_quicksave_check', lambda slot: slot.get_scheme_state()['tower_brigands']['quicksave_counter'] < 5, ('make_quicksave', 100), ('do_prebuff', 100)),
+		GoalState('make_quicksave', gs_make_quicksave, ('do_prebuff', 100)),
 		GoalState('do_prebuff', gs_push_scheme, ('go_temple_tower_interior', 100), params={'param1': 'prebuff'}),
 		GoalStateCreatePushScheme('go_temple_tower_interior', 'go_temple_tower_interior', create_scheme_enter_building, (map_connectivity[TEMPLE_TOWER_EXTERIOR_MAP][TEMPLE_TOWER_INTERIOR_MAP], TEMPLE_TOWER_INTERIOR_MAP ),('await_combat', 100) ),
 
