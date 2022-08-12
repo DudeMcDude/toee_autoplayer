@@ -18,6 +18,10 @@ LOGGING_EN   = True
 
 
 HOMMLET_EXTERIOR_MAP      = 5001
+MOATHOUSE_EXTERIOR_MAP    = 5002
+MOATHOUSE_TOWER_MAP       = 5003
+MOATHOUSE_RUINS_MAP       = 5004
+MOATHOUSE_DUNGEON_MAP     = 5005
 HOMMLET_INN_MAIN_MAP      = 5007
 TEMPLE_COURTYARD_MAP      = 5062
 TEMPLE_INTERIOR           = 5064
@@ -29,6 +33,22 @@ TEMPLE_TOWER_EXTERIOR_MAP = 5111
 map_connectivity = { # TODO: automate this
 	HOMMLET_EXTERIOR_MAP: { #5001
 		HOMMLET_INN_MAIN_MAP: (619, 404)
+	},
+
+
+	MOATHOUSE_EXTERIOR_MAP: { # 5002
+		MOATHOUSE_TOWER_MAP: (485, 480),
+		MOATHOUSE_RUINS_MAP: (468, 452),
+	},
+	MOATHOUSE_TOWER_MAP: { # 5003
+		MOATHOUSE_EXTERIOR_MAP: (467, 488),
+	},
+	MOATHOUSE_RUINS_MAP: { # 5004
+		MOATHOUSE_EXTERIOR_MAP: (481, 482),
+		MOATHOUSE_DUNGEON_MAP: (484, 474)
+	},
+	MOATHOUSE_DUNGEON_MAP: { # 5005
+		MOATHOUSE_RUINS_MAP: (429, 410),
 	},
 
 	HOMMLET_INN_MAIN_MAP: { # 5007
@@ -119,7 +139,7 @@ def gs_master(slot):
 			pt.add_scheme( create_hommlet_scheme1(), 'hommlet1' )
 			pt.push_scheme('hommlet1')
 			return 0
-		# pt.push_scheme('prebuff')
+		# pt.push_scheme('sell_loot')
 		# return 0
 		
 		leader = game.leader
@@ -193,7 +213,7 @@ def setup_playtester(autoplayer):
 
 	autoplayer.add_scheme( create_shop_map_scheme(), 'shopmap' )
 	autoplayer.add_scheme( create_master_scheme(), 'main' )
-	autoplayer.add_scheme( create_goto_area('moathouse'), 'goto_moathouse' )
+	autoplayer.add_scheme( create_goto_area('moathouse', 2), 'goto_moathouse' )
 	autoplayer.add_scheme( create_goto_area('south hommlet'), 'goto_hommlet' )
 	autoplayer.add_scheme( create_goto_area('nulb', 3), 'goto_nulb' )
 	autoplayer.add_scheme( create_goto_area('Temple of Elemental Evil', 4), 'goto_temple' )
@@ -880,7 +900,9 @@ def create_load_game_scheme(save_id):
 		# type: (GoalSlot)->int
 		state = slot.get_scheme_state()
 		idx = state['widget_scan']['idx']
+		print('idx: ' + str(idx))
 		widget = wid_list[idx]
+		print('widget: ' + str(widget))
 		wid = controller_ui_util.obtain_widget(wid_list[idx])
 		if wid is None:
 			return 0
@@ -1547,8 +1569,6 @@ def create_brigand_tower_scheme():
 	def gs_brigand_tower_end(slot):
 		return 1
 	
-	TEMPLE_TOWER_EXIT_LOC          = (485, 497) # from tower interior back to tower exterior map
-	
 	cs.__set_stages__([
 		GoalStateStart( gs_brigand_tower_init, ('check_temple_area', 100), ),
 		GoalStateCondition('check_temple_area', lambda slot: game.leader.area == 4, ('check_temple_courtyard', 100), ('go_temple', 100), ),
@@ -1574,6 +1594,26 @@ def create_brigand_tower_scheme():
 		GoalState('go_temple_courtyard', gs_push_scheme, ('end', 100), params={'param1': 'get_worldmap_access'} ),
 
 		GoalState('end', gs_brigand_tower_end, ('end', 100), )
+	])
+	return cs
+
+
+def create_moathouse_scheme():
+	AREA_ID = 2
+	def gs_init(slot):
+		#type: (GoalSlot)->int
+		return 1
+	cs = ControlScheme()
+	cs.__set_stages__([
+	  GoalStateStart(gs_init, ('STAGE', 100),('end', 100) ),
+	
+	  GoalStateCondition('check_area', lambda slot: game.leader.area == AREA_ID, ('check_temple_courtyard', 100), ('go_area', 100), ),
+	  GoalStateCreatePushScheme('go_area', 'go_area_%d' % AREA_ID , create_goto_area, ('moathouse', 2), ('check_temple_courtyard', 100), ),
+
+
+	
+	  GoalState(),
+	  GoalStateEnd(gs_wait_cb, ('end', 100), ),
 	])
 	return cs
 
@@ -1792,8 +1832,10 @@ def create_barter_ui_sell_loot(obj):
 		GoalState('mouse_down', gs_lmb_down, ('select_container_item_slot', 100),  ),
 		GoalState('select_container_item_slot', gs_select_container_item_slot, ('move_mouse_to_container', 200), ),
 		GoalState('move_mouse_to_container', gs_move_mouse_to_widget, ('mouse_up', 330), ('end', 100), ),
-		GoalState('mouse_up', gs_lmb_up, ('check_inventory_ui_open', 330),  ),
-		# handle "won't buy that item" or maybe no room..
+		GoalState('mouse_up', gs_lmb_up, ('is_transfer_slider_active', 100),  ),
+		GoalState('is_transfer_slider_active', gs_is_widget_visible, ('press_slider_ok', 100), ('check_inventory_ui_open', 100) , params={'param1': WID_IDEN.SLIDER_UI_OK_BTN}),
+		GoalState('press_slider_ok', gs_press_widget, ('check_inventory_ui_open', 330), params={'param1': WID_IDEN.SLIDER_UI_OK_BTN}),
+		# handle "no room"..
 		
 		GoalStateEnd( gs_wait_cb, ('end', 10), )
 	])

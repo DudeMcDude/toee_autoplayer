@@ -164,6 +164,7 @@ class WID_IDEN:
     CHAR_UI_INVENTORY_BTNS = [ [('char_inventory_ui_inv_window_%0.2d' % x , ),] for x in range(0, 24) ]
 
     POPUP_UI_OK_BTN = [('popup_ui_main_window',), ('popup_ui_button', ), 0]
+    SLIDER_UI_OK_BTN = [('slider_window', ), ('slider accept button',) ]
 
     LOGBOOK_UI_KEY_ENTRY_ACCEPT = [('logbook_ui_keys_key_entry_window', ), ('logbook_ui_key_entry_accept_butn',)]
 
