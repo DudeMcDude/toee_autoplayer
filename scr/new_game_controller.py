@@ -921,12 +921,15 @@ def create_load_game_scheme(save_id):
 		GoalStateStart( gs_is_main_menu, ('main_menu_load', 100), ('ingame_load', 100) ),
 		
 		# main menu load
-		GoalState('main_menu_load', gs_press_widget, ('load_game_find_entry', 200), (), {'param1': WID_IDEN.MAIN_MENU_LOAD_GAME}),
+		GoalState('main_menu_load', gs_press_widget, ('check_load_entries_visible', 100), (), {'param1': WID_IDEN.MAIN_MENU_LOAD_GAME}),
+		GoalState('check_load_entries_visible', gs_is_widget_visible, ('load_game_find_entry', 100), ('main_menu_load', 100), params={'param1': WID_IDEN.LOAD_GAME_ENTRY_BTNS[0]}),
 		GoalState('load_game_find_entry',gs_scan_get_widget_from_list, ('load_game_entry', 100), ('end', 100), params={'param1':wid_list, 'param2': match_load_game }),
+		
 		
 		GoalState('ingame_load', gs_is_widget_visible, ('ingame_press_load', 200), ('ingame_bring_up_menu', 100), {'param1': WID_IDEN.INGAME_LOAD_GAME}),
 		GoalState('ingame_bring_up_menu', gs_press_key, ('ingame_load', 100), ('ingame_load', 100) , params={'param1': DIK_ESCAPE}),
-		GoalState('ingame_press_load', gs_press_widget, ('ingame_load_game_find_entry', 200), (), {'param1': WID_IDEN.INGAME_LOAD_GAME}),
+		GoalState('ingame_press_load', gs_press_widget, ('ingame_check_load_entries_visible', 200), (), {'param1': WID_IDEN.INGAME_LOAD_GAME}),
+		GoalState('ingame_check_load_entries_visible', gs_is_widget_visible, ('ingame_load_game_find_entry', 100), ('ingame_press_load', 100), params={'param1': WID_IDEN.LOAD_GAME_ENTRY_BTNS[0]}),
 		GoalState('ingame_load_game_find_entry',gs_scan_get_widget_from_list, ('load_game_entry', 100), ('end', 100), params={'param1':wid_list, 'param2': match_load_game }),
 		
 		GoalState('load_game_entry', gs_press_widget, ('load_it', 200), ),

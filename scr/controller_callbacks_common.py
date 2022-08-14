@@ -149,6 +149,8 @@ def gs_move_mouse_to_widget(slot):
 			if 'wid_id' in scheme_state['widget_scan']:
 				wid_identifier = scheme_state['widget_scan']['wid_id']
 
+	if wid_identifier is None:
+		print('gs_move_mouse_to_widget: wid_identifier is None! scheme_state was %s' % (str(scheme_state)))
 	wid = controller_ui_util.obtain_widget(wid_identifier)
 	if wid is None:
 		return 0
