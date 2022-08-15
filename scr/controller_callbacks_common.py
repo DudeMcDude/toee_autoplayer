@@ -7,6 +7,9 @@ import controller_ui_util
 import gamedialog as dlg
 
 #region utils
+def is_ingame():
+	return len(game.party) > 0
+
 debug_prints_en = True
 def debug_print(msg):
 	if debug_prints_en:
@@ -202,6 +205,11 @@ def gs_lmb_up(slot):
 #endregion widget callbacks
 
 #region navigation
+def get_current_map():
+	if not is_ingame():
+		return 5000
+	return game.leader.map
+
 def gs_scroll_to_tile(slot):
 	loc = slot.param1
 	if type(loc) is tuple:
@@ -300,10 +308,10 @@ def gs_condition_map_change(slot):
 		state = slot.get_scheme_state()
 		if not 'map_change_check' in state:
 			# print('map change check: initing with %s' % str(game.leader.map))
-			state['map_change_check'] = {'map': game.leader.map}
+			state['map_change_check'] = {'map': get_current_map()}
 			return 0
-		if state['map_change_check']['map'] != game.leader.map:
-			# print('map change check: current %s is different than previous %s' % (str(game.leader.map), str(state['map_change_check']['map']) ))
+		if state['map_change_check']['map'] != get_current_map():
+			# print('map change check: current %s is different than previous %s' % (str(get_current_map()), str(state['map_change_check']['map']) ))
 			return 1
 		# print('map change check: no change %s' % ( str(state['map_change_check']['map']) ))
 		return 0
@@ -652,7 +660,11 @@ def gs_create_and_push_scheme(slot):
 	else:
 		create_cb, args = slot.param2
 
+	do_push = False
 	if slot.state is None:
+		do_push = True
+	
+	if do_push:
 		print('gs_create_and_push_scheme: ID = %s , args = %s' %(id, str(args)) )
 		cs = create_cb(*args)
 		slot.state = {}
