@@ -778,6 +778,7 @@ def gs_click_on_object(slot):
 	#type: (GoalSlot)->int
 	'''
 	param1 - object ref
+	scheme_state['click_object']['obj_ref']
 	'''
 	
 	# print('gs_click_on_object')
@@ -809,8 +810,11 @@ def gs_click_on_object(slot):
 		return 0
 	
 	if game.hovered == obj:
+		print('gs_click_on_object: clicking object')
 		click_mouse()
 		return 1
+	else:
+		print('Error! Hovered item is wrong, expected %s, game.hovered = %s' %( str(obj), str(game.hovered) ) )
 	return 0
 
 def is_moving_check(slot):
@@ -1137,6 +1141,7 @@ def create_move_mouse_to_obj(obj_ref):
 		#type: (GoalSlot)->int
 		state = slot.get_scheme_state()
 		obj = get_object(obj_ref)
+		print('create_move_mouse_to_obj init: obj ref is %s, loc = %s' % (str(obj) , str(location_to_axis(obj.location)) ) )
 		state['mouse_move'] = {
 			'obj': obj,
 			'tweak_x': 0,
@@ -1262,6 +1267,10 @@ def create_scheme_go_to_tile( loc ):
 def create_scheme_enter_building( loc, tgt_map_id = None ): #TODO
 	cs = ControlScheme()
 	DOOR_ICON_PROTO = 2011
+	STAIRS_DOWN_ICON_PROTO = 2014
+	STAIRS_UP_ICON_PROTO = 2015
+	
+	MAP_TRANSFER_PROTOS = (DOOR_ICON_PROTO, STAIRS_DOWN_ICON_PROTO, STAIRS_UP_ICON_PROTO)
 	def gs_enter_building_init(slot):
 		#type: (GoalSlot)->int
 		if len(game.party) == 0 or game.leader == OBJ_HANDLE_NULL:
@@ -1269,13 +1278,13 @@ def create_scheme_enter_building( loc, tgt_map_id = None ): #TODO
 		state = slot.get_scheme_state()
 		state['map_change_check'] = {'map':  get_current_map() }
 		if loc is None: # trying to click something nearby
-			obj = get_object( {'proto': DOOR_ICON_PROTO})
+			obj = get_object( {'proto': MAP_TRANSFER_PROTOS})
 			if obj != OBJ_HANDLE_NULL:
-				state['click_object'] = { 'obj_ref': {'proto': DOOR_ICON_PROTO, 'guid': obj.__getstate__()} }
+				state['click_object'] = { 'obj_ref': {'proto': MAP_TRANSFER_PROTOS, 'guid': obj.__getstate__()} }
 		else:
-			obj = get_object( {'proto': DOOR_ICON_PROTO, 'location': loc})
+			obj = get_object( {'proto': MAP_TRANSFER_PROTOS, 'location': loc})
 			if obj != OBJ_HANDLE_NULL:
-				state['click_object'] = {'obj_ref': {'proto': DOOR_ICON_PROTO, 'guid': obj.__getstate__()} }
+				state['click_object'] = {'obj_ref': {'proto': MAP_TRANSFER_PROTOS, 'guid': obj.__getstate__()} }
 		return 1
 	
 	def check_tgt_map(slot):
@@ -1300,7 +1309,7 @@ def create_scheme_enter_building( loc, tgt_map_id = None ): #TODO
 
 			GoalState('refresh_select_all', gs_select_all, ('map_change_check', 100), ),
 			GoalState('map_change_check', gs_condition_map_change, ('end', 100), ('click_door_icon', 100) ),
-			GoalState('click_door_icon', gs_click_on_object, ('map_change_loop', 100), params={'param1': {'proto': DOOR_ICON_PROTO} }),
+			GoalState('click_door_icon', gs_click_on_object, ('map_change_loop', 100), params={'param1': {'proto': MAP_TRANSFER_PROTOS} }),
 			
 
 			
@@ -1320,7 +1329,7 @@ def create_scheme_enter_building( loc, tgt_map_id = None ): #TODO
 			
 			GoalState('refresh_select_all', gs_select_all, ('map_change_check', 100), ), # in case we get interrupted along the way
 			GoalState('map_change_check', gs_condition_map_change, ('end', 100), ('click_door_icon', 100) ),
-			GoalState('click_door_icon', gs_click_on_object, ('map_change_loop', 100), params={'param1': {'proto': DOOR_ICON_PROTO, 'loc': loc} }),
+			GoalState('click_door_icon', gs_click_on_object, ('map_change_loop', 100), params={'param1': {'proto': MAP_TRANSFER_PROTOS, 'loc': loc} }),
 			
 			GoalState('map_change_loop', gs_condition_map_change, ('end', 200), ('moving_check', 500) ),
 			GoalState('moving_check', is_moving_check, ('moving_check', 500), ('check_tgt_map', 100) ),

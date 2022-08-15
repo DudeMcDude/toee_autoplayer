@@ -37,7 +37,9 @@ def get_object(obj_identifier):
 		obj_list = game.obj_list_vicinity(loc, obj_type)
 		if 'proto' in obj_identifier:
 			proto_id = obj_identifier['proto']
-			obj_list = [x for x in obj_list if x.proto == proto_id]
+			if type(proto_id) == int:
+				proto_id = (proto_id,) 
+			obj_list = [x for x in obj_list if x.proto in proto_id]
 		if len(obj_list) == 0:
 			return OBJ_HANDLE_NULL
 		if 'guid' in obj_identifier:
@@ -47,6 +49,8 @@ def get_object(obj_identifier):
 				return OBJ_HANDLE_NULL
 		# get closest one
 		obj_list.sort(key = lambda x: x.distance_to(loc))
+		if len(obj_list) > 0:
+			print('ambiguous obj_ref, found multiple objects: %s' %(str(obj_list)) )
 		return obj_list[0]
 	return OBJ_HANDLE_NULL
 
