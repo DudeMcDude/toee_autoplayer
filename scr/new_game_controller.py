@@ -23,12 +23,25 @@ MOATHOUSE_TOWER_MAP       = 5003
 MOATHOUSE_RUINS_MAP       = 5004
 MOATHOUSE_DUNGEON_MAP     = 5005
 HOMMLET_INN_MAIN_MAP      = 5007
+NULB_EXTERIOR_MAP         = 5051
 TEMPLE_COURTYARD_MAP      = 5062
 TEMPLE_INTERIOR           = 5064
 TEMPLE_TOWER_INTERIOR_MAP = 5065
 TEMPLE_DUNGEON_LEVEL_1    = 5066
 TEMPLE_TOWER_EXTERIOR_MAP = 5111
 
+
+AREA_ID_HOMMLET = 1
+AREA_ID_MOATHOUSE = 2
+AREA_ID_NULB = 3
+AREA_ID_TEMPLE = 4
+
+exterior_maps = {
+	AREA_ID_MOATHOUSE: MOATHOUSE_EXTERIOR_MAP,
+	AREA_ID_HOMMLET: HOMMLET_EXTERIOR_MAP,
+	AREA_ID_NULB: NULB_EXTERIOR_MAP,
+	AREA_ID_TEMPLE: TEMPLE_COURTYARD_MAP,
+}
 
 map_connectivity = { # TODO: automate this
 	HOMMLET_EXTERIOR_MAP: { #5001
@@ -79,10 +92,87 @@ map_connectivity = { # TODO: automate this
 	},
 }
 
+class CourseSearchNode:
+	id = -1
+	prev = -1
+	cost = 0
+	def __init__(self, id, prev, cost):
+		self.id = id
+		self.prev = prev
+		self.cost = cost
+		return
+	def __repr__(self):
+		return "id = %d, prev = %d, cost = %d" % (self.id, self.prev, self.cost)
+
+def pop_search_node(open_set):
+	#type: (list[CourseSearchNode])->CourseSearchNode
+	result = None
+	
+	min_cost = 100000
+	result_idx = -1
+	for i in range(len(open_set)):
+		cost = open_set[i].cost
+		if cost < 0:
+			continue
+		if cost < min_cost:
+			min_cost = open_set[i].cost
+			result_idx = i
+
+	if result_idx >= 0:
+		result = open_set.pop(result_idx)
+	return result
+
+def get_map_course(cur_map, tgt_map):
+	best_course = [cur_map,]
+	test_course = [cur_map,]
+	open_set = [] #type: list[CourseSearchNode]
+	
+	
+	best_node = CourseSearchNode(cur_map, -1, 0)
+		
+	while best_node.id != tgt_map:
+		# print('get_map_course: current: ' + str(best_node) )
+
+		cur_node_id = best_node.id
+		neighbours = map_connectivity[cur_node_id]
+
+		for map_id, loc in neighbours.items():
+			# print('neighbour: ' + str(map_id))
+			n_node = CourseSearchNode(map_id, cur_node_id, best_node.cost + 1)
+			
+			# search for neighbour in open set
+			found_in_open = False
+			for i,s in enumerate(open_set):
+				if s.id == n_node.id:
+					found_in_open = True
+					if s.prev == n_node.prev and s.cost > n_node.cost:
+						s = n_node
+			if not found_in_open:
+				open_set.append(n_node)
+		
+		best_node.cost = -1
+		open_set.append(best_node)
+		
+		best_node  = pop_search_node(open_set)
+		if best_node is None:
+			return None
+	
+	tmp_node = best_node
+	best_course = [tgt_map, ]
+	while tmp_node.prev != -1:
+		# search for prev node
+		for i in range(len(open_set)):
+			node = open_set[i]
+			if node.id == tmp_node.prev:
+				best_course.insert(0, node.id)
+				tmp_node = open_set[i]
+				break
+	return best_course
+
 def can_access_worldmap():
 	if len(game.party) == 0:
 		return False
-	map_id = game.leader.map
+	map_id = get_current_map()
 	if map_id in range(5070, 5078): # random encounter maps
 		return True
 	map_adj = map_id - 5001
@@ -101,7 +191,8 @@ def gs_master(slot):
 	#type: (GoalSlot)->int
 
 	# IMPORTANT NOTE: 
-	# 	push_scheme resets slot.state !!!!
+	# 	push_scheme resets slot.state !!!! so don't modify it afterwards, always do:
+	#   state[..] = ..; push_scheme(..); return 0
 
 	pt = Playtester.get_instance()
 	if slot.state is None:
@@ -162,6 +253,7 @@ def gs_master(slot):
 				random_schemes = ['goto_nulb', 'goto_brigand_tower']
 				# random_schemes = [ 'goto_brigand_tower']
 				# random_schemes = [ 'goto_nulb']
+				random_schemes = ['do_moathouse_randomly']
 				random_choice  = game.random_range(0, len(random_schemes)-1)
 				pt.push_scheme(random_schemes[random_choice])
 				return 0
@@ -221,6 +313,7 @@ def setup_playtester(autoplayer):
 	
 	autoplayer.add_scheme( create_scheme_enter_building(None), 'exit_building' )
 	autoplayer.add_scheme( create_get_worldmap_access(), 'get_worldmap_access')
+	autoplayer.add_scheme( create_scheme_moathouse(), 'do_moathouse_randomly' )
 	
 	autoplayer.set_dialog_handler(dialog_handler)
 	autoplayer.set_combat_handler(combat_handler)
@@ -685,6 +778,7 @@ def gs_click_on_object(slot):
 	#type: (GoalSlot)->int
 	'''
 	param1 - object ref
+	scheme_state['click_object']['obj_ref']
 	'''
 	
 	# print('gs_click_on_object')
@@ -716,8 +810,11 @@ def gs_click_on_object(slot):
 		return 0
 	
 	if game.hovered == obj:
+		print('gs_click_on_object: clicking object')
 		click_mouse()
 		return 1
+	else:
+		print('Error! Hovered item is wrong, expected %s, game.hovered = %s' %( str(obj), str(game.hovered) ) )
 	return 0
 
 def is_moving_check(slot):
@@ -730,7 +827,7 @@ def is_moving_check(slot):
 			slot.state['pc%d' % n] = pc.location
 			slot.state['pc%d_rot' % n] = pc.rotation
 
-		slot.state['map'] = game.leader.map
+		slot.state['map'] = get_current_map()
 		return 1
 	
 	result = 0
@@ -976,30 +1073,34 @@ def create_true_neutral_scheme():
 	return cs
 
 def create_rest_scheme():
+	rest_map_IDs = {
+		AREA_ID_HOMMLET: HOMMLET_INN_MAIN_MAP,
+	}
 	def init_rest_scheme(slot):
 		#type: (GoalSlot)->int
 		state =slot.get_scheme_state()
 
-		loc = (500,500)
 		tgt_map_id = -1
-		if game.leader.map == 5001: # Hommlet
-			loc        = map_connectivity[HOMMLET_EXTERIOR_MAP][HOMMLET_INN_MAIN_MAP]
-			tgt_map_id = HOMMLET_INN_MAIN_MAP
+		cur_map = get_current_map()
+		if game.leader.area in rest_map_IDs:
+			tgt_map_id = rest_map_IDs[game.leader.area]
+		else:
+			return 0
 
-		args = ( loc, tgt_map_id )
+		args = ( tgt_map_id, )
 		
 		state['push_scheme'] = {
 			'id': 'goto_building',
-			'callback': (create_scheme_enter_building, args)
+			'callback': (create_scheme_navigate_to_map, args)
 		}
 		state['target_map'] = tgt_map_id
 		return 1
 	
 	def check_map(slot):
 		#type: (GoalSlot)->int
-		state =slot.get_scheme_state()
+		state = slot.get_scheme_state()
 
-		if state['target_map'] == game.leader.map: 
+		if state['target_map'] == get_current_map(): 
 			return 1
 		if state['target_map'] == -1:
 			import random_encounter
@@ -1010,7 +1111,7 @@ def create_rest_scheme():
 
 	cs = ControlScheme()
 	cs.__set_stages__([
-		GoalStateStart( init_rest_scheme, ('check_map', 100),  ),
+		GoalStateStart( init_rest_scheme, ('check_map', 100),('end', 100)  ),
 		GoalState('check_map', gs_condition, ('start_resting', 100), ('go_building', 100), params={'param1': check_map} ),
 		
 		GoalState('go_building', gs_create_and_push_scheme, ('start_resting', 500),('end', 100)  ),
@@ -1040,6 +1141,7 @@ def create_move_mouse_to_obj(obj_ref):
 		#type: (GoalSlot)->int
 		state = slot.get_scheme_state()
 		obj = get_object(obj_ref)
+		print('create_move_mouse_to_obj init: obj ref is %s, loc = %s' % (str(obj) , str(location_to_axis(obj.location)) ) )
 		state['mouse_move'] = {
 			'obj': obj,
 			'tweak_x': 0,
@@ -1165,20 +1267,24 @@ def create_scheme_go_to_tile( loc ):
 def create_scheme_enter_building( loc, tgt_map_id = None ): #TODO
 	cs = ControlScheme()
 	DOOR_ICON_PROTO = 2011
+	STAIRS_DOWN_ICON_PROTO = 2014
+	STAIRS_UP_ICON_PROTO = 2015
+	
+	MAP_TRANSFER_PROTOS = (DOOR_ICON_PROTO, STAIRS_DOWN_ICON_PROTO, STAIRS_UP_ICON_PROTO)
 	def gs_enter_building_init(slot):
 		#type: (GoalSlot)->int
 		if len(game.party) == 0 or game.leader == OBJ_HANDLE_NULL:
 			return 0
 		state = slot.get_scheme_state()
-		state['map_change_check'] = {'map':  game.leader.map }
+		state['map_change_check'] = {'map':  get_current_map() }
 		if loc is None: # trying to click something nearby
-			obj = get_object( {'proto': DOOR_ICON_PROTO})
+			obj = get_object( {'proto': MAP_TRANSFER_PROTOS})
 			if obj != OBJ_HANDLE_NULL:
-				state['click_object'] = { 'obj_ref': {'proto': DOOR_ICON_PROTO, 'guid': obj.__getstate__()} }
+				state['click_object'] = { 'obj_ref': {'proto': MAP_TRANSFER_PROTOS, 'guid': obj.__getstate__()} }
 		else:
-			obj = get_object( {'proto': DOOR_ICON_PROTO, 'location': loc})
+			obj = get_object( {'proto': MAP_TRANSFER_PROTOS, 'location': loc})
 			if obj != OBJ_HANDLE_NULL:
-				state['click_object'] = {'obj_ref': {'proto': DOOR_ICON_PROTO, 'guid': obj.__getstate__()} }
+				state['click_object'] = {'obj_ref': {'proto': MAP_TRANSFER_PROTOS, 'guid': obj.__getstate__()} }
 		return 1
 	
 	def check_tgt_map(slot):
@@ -1188,7 +1294,7 @@ def create_scheme_enter_building( loc, tgt_map_id = None ): #TODO
 			return 1
 		if len(game.party) == 0 or game.leader == OBJ_HANDLE_NULL:
 			return 0
-		if game.leader.map == tgt_map_id:
+		if get_current_map() == tgt_map_id:
 			return 0 # already there, abort scheme
 		return 1 # needs to proceed with this scheme
 	
@@ -1203,7 +1309,7 @@ def create_scheme_enter_building( loc, tgt_map_id = None ): #TODO
 
 			GoalState('refresh_select_all', gs_select_all, ('map_change_check', 100), ),
 			GoalState('map_change_check', gs_condition_map_change, ('end', 100), ('click_door_icon', 100) ),
-			GoalState('click_door_icon', gs_click_on_object, ('map_change_loop', 100), params={'param1': {'proto': DOOR_ICON_PROTO} }),
+			GoalState('click_door_icon', gs_click_on_object, ('map_change_loop', 100), params={'param1': {'proto': MAP_TRANSFER_PROTOS} }),
 			
 
 			
@@ -1223,7 +1329,7 @@ def create_scheme_enter_building( loc, tgt_map_id = None ): #TODO
 			
 			GoalState('refresh_select_all', gs_select_all, ('map_change_check', 100), ), # in case we get interrupted along the way
 			GoalState('map_change_check', gs_condition_map_change, ('end', 100), ('click_door_icon', 100) ),
-			GoalState('click_door_icon', gs_click_on_object, ('map_change_loop', 100), params={'param1': {'proto': DOOR_ICON_PROTO, 'loc': loc} }),
+			GoalState('click_door_icon', gs_click_on_object, ('map_change_loop', 100), params={'param1': {'proto': MAP_TRANSFER_PROTOS, 'loc': loc} }),
 			
 			GoalState('map_change_loop', gs_condition_map_change, ('end', 200), ('moving_check', 500) ),
 			GoalState('moving_check', is_moving_check, ('moving_check', 500), ('check_tgt_map', 100) ),
@@ -1259,6 +1365,70 @@ def create_open_worldmap_ui():
 	])
 	return cs
 
+def create_scheme_navigate_to_map(MAP_ID):
+	''' Navigates within area
+	'''
+	def gs_navigate_to_map_init(slot):
+		#type: (GoalSlot)->int
+		state = slot.get_scheme_state()
+		cur_map = get_current_map()
+		tgt_map = MAP_ID
+		if not tgt_map in map_connectivity or not cur_map in map_connectivity:
+			return 0
+		print('create_scheme_navigate_to_map: getting map course')
+		map_course = get_map_course(cur_map, tgt_map)
+		print('result: ' + str(map_course) )
+		state['navigate_to_map'] = {
+			'cur_map': cur_map,
+			'cur_area': game.leader.area,
+			'tgt_map': tgt_map,
+			'map_course': map_course,
+			'next_loc': None,
+			'next_map': None,
+		}
+		return 1
+
+	def gs_configure_destination(slot):
+		''' configures scheme_state['push_scheme']
+		'''
+		# type: (GoalSlot)->int
+		print('create_scheme_navigate_to_map: configuring destination...')
+		state = slot.get_scheme_state()
+		cur_map = get_current_map() 
+		tgt_map = state['navigate_to_map']['tgt_map']
+		
+		map_course = state['navigate_to_map']['map_course']
+		if map_course is None:
+			return 0
+
+		
+		for idx,map_id in enumerate(map_course):
+			if map_id != cur_map:
+				continue
+			next_map = map_course[idx+1]
+			next_loc = map_connectivity[cur_map][next_map]
+
+			state['navigate_to_map']['next_loc'] = next_loc
+			state['navigate_to_map']['next_map'] = next_map
+			state['push_scheme']  = {
+				'id': 'navigate_to_map_tmp', 
+				'callback': (create_scheme_enter_building, (next_loc, next_map))
+				}
+			return 1
+		
+		return 1
+
+	
+	cs = ControlScheme()
+	cs.__set_stages__([
+	  GoalStateStart(gs_navigate_to_map_init, ('check_map', 100),('end', 100) ),
+	  GoalState('check_map', lambda slot: get_current_map() == MAP_ID, ('end', 100), ('configure_destination', 100),   ),
+	  GoalState('configure_destination', gs_configure_destination, ('go_next', 100), ('end', 100),),
+	  GoalState('go_next', gs_create_and_push_scheme, ('check_map', 100), ('end', 100), ),	
+	  GoalStateEnd(gs_wait_cb, ('end', 100), ),
+	])
+	return cs
+
 def create_get_worldmap_access():
 	cs = ControlScheme()
 	worldmap_access_map_by_area = {
@@ -1271,7 +1441,7 @@ def create_get_worldmap_access():
 	def gs_init_get_worldmap_access(slot):
 		# type: (GoalSlot)->int
 		state = slot.get_scheme_state()
-		cur_map = game.leader.map
+		cur_map = get_current_map()
 		if not (game.leader.area in worldmap_access_map_by_area):
 			print('worldmap_access_map_by_area: not defined for area [%d]' % game.leader.area)
 			return 0
@@ -1285,7 +1455,10 @@ def create_get_worldmap_access():
 			return 0
 		
 		map_course = get_map_course(cur_map, tgt_map)
-		state['access_worldmap'] = {
+		if map_course is None:
+			return 0
+		
+		state['navigate_to_map'] = {
 			'cur_map': cur_map,
 			'cur_area': game.leader.area,
 			'tgt_map': tgt_map,
@@ -1293,74 +1466,18 @@ def create_get_worldmap_access():
 			'next_loc': None,
 			'next_map': None,
 		}
+		
+		state['push_scheme']  = {
+			'id': 'get_worldmap_access_tmp', 
+			'callback': (create_scheme_navigate_to_map, (tgt_map,))
+			}
 		return 1
 
-	def get_map_course(cur_map, tgt_map):
-		best_course = [cur_map,]
-		test_course = [cur_map,]
-		open_set = []
-		
-		cur_node = cur_map
-		dests = map_connectivity[cur_node]
-		while True:
-			valids = []
-			for map_id, loc in dests.items():
-				if map_id in best_course:
-					continue
-				valids.append( map_id )
-			
-			if len(valids) == 0:
-				best_course.pop()
-				continue
-			
-			for map_id in valids:
-				open_set.append( (cur_node, map_id) )
-			
-			if len(open_set) == 0:
-				break
-
-			cur_node, next_node = open_set.pop()
-			best_course.append(next_node)
-			if next_node == tgt_map:
-				return best_course
-			
-			dests = map_connectivity[next_node]
-
-		return best_course
-
-	def gs_configure_destination(slot):
-		# type: (GoalSlot)->int
-		state = slot.get_scheme_state()
-		cur_map = game.leader.map 
-		tgt_map = state['access_worldmap']['tgt_map']
-		
-		map_course = state['access_worldmap']['map_course']
-		if map_course is None:
-			return 0
-
-		
-		for idx,map_id in enumerate(map_course):
-			if map_id != cur_map:
-				continue
-			next_map = map_course[idx+1]
-			next_loc = map_connectivity[cur_map][next_map]
-
-			state['access_worldmap']['next_loc'] = next_loc
-			state['access_worldmap']['next_map'] = next_map
-			state['push_scheme']  = {
-				'id': 'get_worldmap_access_tmp', 
-				'callback': (create_scheme_enter_building, (next_loc, next_map))
-				}
-			return 1
-		
-		return 1
-
+	
 	cs.__set_stages__([
 		GoalStateStart( gs_init_get_worldmap_access, ('check_access_worldmap', 100), ),
-		GoalStateCondition('check_access_worldmap', lambda slot: can_access_worldmap(), ('end', 100), ('configure_destination', 100) ),
-		GoalState('configure_destination', gs_configure_destination, ('go_next', 100), ('end', 100), ),
-
-		GoalState('go_next', gs_create_and_push_scheme, ('check_access_worldmap', 100), ('end', 100), ),
+		GoalStateCondition('check_access_worldmap', lambda slot: can_access_worldmap(), ('end', 100), ('do_map_navigation', 100) ),
+		GoalState('do_map_navigation', gs_create_and_push_scheme, ('check_access_worldmap', 100), ('end', 100), ),
 		GoalState('end', gs_wait_cb, ('end', 100), )
 	])
 	return cs
@@ -1376,7 +1493,7 @@ def create_goto_area(area_name, area_id = None):
 	def gs_goto_area_init(slot):
 		#type: (GoalSlot)->int
 		state = slot.get_scheme_state()
-		state['map_change_check'] = {'map': game.leader.map}
+		state['map_change_check'] = {'map': get_current_map()}
 		return 1
 	
 	def check_widget(slot):
@@ -1482,8 +1599,8 @@ def create_hommlet_scheme1():
 
 	cs.__set_stages__(
 		[
-		GoalStateStart( gs_condition, ('go_jaroo', 100), ('start2', 100), params={'param1': lambda slot: game.leader.map == 5001}),
-		GoalState('start2', gs_condition, ('handle_jaroo', 100), ('start', 100), params={'param1': lambda slot: game.leader.map == 5042}), # wait until this is fulfilled
+		GoalStateStart( gs_condition, ('go_jaroo', 100), ('start2', 100), params={'param1': lambda slot: get_current_map() == 5001}),
+		GoalState('start2', gs_condition, ('handle_jaroo', 100), ('start', 100), params={'param1': lambda slot: get_current_map() == 5042}), # wait until this is fulfilled
 		
 		GoalState('go_jaroo', gs_create_and_push_scheme, ('handle_jaroo', 100), params={'param1': 'go_grove', 'param2': (create_scheme_enter_building, (GROVE_ENTRANCE_LOC,5042) ) })
 		] +
@@ -1522,7 +1639,7 @@ def create_hommlet_scheme0():
 
 	cs.__set_stages__( 
 		[
-		GoalStateStart( gs_condition, ('go_inn', 100), ('handle_inn', 100), params={'param1': lambda slot: game.leader.map == 5001}),
+		GoalStateStart( gs_condition, ('go_inn', 100), ('handle_inn', 100), params={'param1': lambda slot: get_current_map() == 5001}),
 		GoalState('go_inn', gs_create_and_push_scheme, ('handle_inn', 100), params={'param1': 'go_wench', 'param2': (create_scheme_enter_building, (WENCH_DOOR_ENTRANCE_LOC, 5007) )}),
 		] +
 		
@@ -1574,13 +1691,14 @@ def create_brigand_tower_scheme():
 	
 	cs.__set_stages__([
 		GoalStateStart( gs_brigand_tower_init, ('check_temple_area', 100), ),
-		GoalStateCondition('check_temple_area', lambda slot: game.leader.area == 4, ('check_temple_courtyard', 100), ('go_temple', 100), ),
-		GoalState('go_temple', gs_push_scheme, ('check_temple_courtyard', 100), params={'param1': 'goto_temple'}),
+
+		GoalStateCondition('check_temple_area', lambda slot: game.leader.area == 4, ('check_exterior_map', 100), ('go_temple', 100), ),
+		GoalState('go_temple', gs_push_scheme, ('check_exterior_map', 100), params={'param1': 'goto_temple'}),
 		
-		GoalStateCondition('check_temple_courtyard', lambda slot: game.leader.map == TEMPLE_COURTYARD_MAP, ('go_temple_tower_map', 100), ('check_temple_tower_ext', 100), ),
+		GoalStateCondition('check_exterior_map', lambda slot: get_current_map() == TEMPLE_COURTYARD_MAP, ('go_temple_tower_map', 100), ('check_temple_tower_ext', 100), ),
 		GoalStateCreatePushScheme('go_temple_tower_map', 'go_temple_tower_exterior', create_scheme_enter_building, (map_connectivity[TEMPLE_COURTYARD_MAP][TEMPLE_TOWER_EXTERIOR_MAP], TEMPLE_TOWER_EXTERIOR_MAP ),('check_temple_tower_ext', 100) ),
 		
-		GoalStateCondition('check_temple_tower_ext', lambda slot: game.leader.map == TEMPLE_TOWER_EXTERIOR_MAP, ('make_quicksave_check', 100), ('go_temple', 100), ),
+		GoalStateCondition('check_temple_tower_ext', lambda slot: get_current_map() == TEMPLE_TOWER_EXTERIOR_MAP, ('make_quicksave_check', 100), ('go_temple', 100), ),
 		GoalStateCondition('make_quicksave_check', lambda slot: slot.get_scheme_state()['tower_brigands']['quicksave_counter'] < 5, ('make_quicksave', 100), ('do_prebuff', 100)),
 		GoalState('make_quicksave', gs_make_quicksave, ('do_prebuff', 100)),
 		GoalState('do_prebuff', gs_push_scheme, ('go_temple_tower_interior', 100), params={'param1': 'prebuff'}),
@@ -1590,32 +1708,93 @@ def create_brigand_tower_scheme():
 		GoalState('make_quickload_check', lambda slot: slot.get_scheme_state()['tower_brigands']['quicksave_counter'] < 5, ('make_quickload', 100), ('check_temple_tower_int', 100)),
 		GoalState('make_quickload', gs_make_quickload, ('check_temple_tower_ext', 5000)),
 
-		GoalStateCondition('check_temple_tower_int', lambda slot: game.leader.map == TEMPLE_TOWER_INTERIOR_MAP, ('exit_tower', 100), ('check_temple_tower_ext2', 100), ),
+		GoalStateCondition('check_temple_tower_int', lambda slot: get_current_map() == TEMPLE_TOWER_INTERIOR_MAP, ('exit_tower', 100), ('check_temple_tower_ext2', 100), ),
 		GoalStateCreatePushScheme('exit_tower', 'exit_temple_tower', create_scheme_enter_building, (map_connectivity[TEMPLE_TOWER_INTERIOR_MAP][TEMPLE_TOWER_EXTERIOR_MAP], TEMPLE_TOWER_EXTERIOR_MAP ), ('check_temple_tower_ext2', 100) ),
 
-		GoalStateCondition('check_temple_tower_ext2', lambda slot: game.leader.map == TEMPLE_TOWER_EXTERIOR_MAP, ('go_temple_courtyard', 100), ('end', 100), ),
+		GoalStateCondition('check_temple_tower_ext2', lambda slot: get_current_map() == TEMPLE_TOWER_EXTERIOR_MAP, ('go_temple_courtyard', 100), ('end', 100), ),
 		GoalState('go_temple_courtyard', gs_push_scheme, ('end', 100), params={'param1': 'get_worldmap_access'} ),
 
 		GoalState('end', gs_brigand_tower_end, ('end', 100), )
 	])
 	return cs
 
+#WIP
+def create_scheme_go_random_map():
+	def gs_random_map_init(slot):
+		#type: (GoalSlot)->int
+		state = slot.get_scheme_state()
+		
+		cur_map = get_current_map()
+		tgt_map = cur_map
+		N = game.random_range(2,7)
+		for i in range(N):
+			N_connections = len(map_connectivity[tgt_map])
+			if N_connections == 0:
+				raise Exception('no connections defined, this is gonna screw things up')
+			map_idx = game.random_range(0, N_connections-1)
+			keys = list(map_connectivity[tgt_map].keys())
+			tgt_map = keys[map_idx]
+		
+		state['push_scheme']  = {
+				'id': 'navigate_to_random_map_tmp', 
+				'callback': (create_scheme_navigate_to_map, (tgt_map,))
+				}
+			
+		return 1
 
-def create_moathouse_scheme():
-	AREA_ID = 2
+	cs = ControlScheme()
+	cs.__set_stages__([
+	  GoalStateStart(gs_random_map_init, ('navigate_to_random_map', 100),('end', 100) ),
+	  GoalState('navigate_to_random_map', gs_create_and_push_scheme, ('end', 100), ('end', 100) ),
+	  GoalStateEnd(gs_wait_cb, ('end', 100), ),
+	])
+	return cs
+
+def create_scheme_wander_around():
 	def gs_init(slot):
 		#type: (GoalSlot)->int
 		return 1
 	cs = ControlScheme()
 	cs.__set_stages__([
-	  GoalStateStart(gs_init, ('STAGE', 100),('end', 100) ),
-	
-	  GoalStateCondition('check_area', lambda slot: game.leader.area == AREA_ID, ('check_temple_courtyard', 100), ('go_area', 100), ),
-	  GoalStateCreatePushScheme('go_area', 'go_area_%d' % AREA_ID , create_goto_area, ('moathouse', 2), ('check_temple_courtyard', 100), ),
+	  GoalStateStart(gs_init, ('end', 100),('end', 100) ),
+	  GoalStateEnd(gs_wait_cb, ('end', 100), ),
+	])
+	return cs
 
-
+def create_scheme_moathouse():
+	AREA_ID = 2
+	AREA_WORLDMAP_NAME = 'moathouse'
+	AREA_EXTERIOR_MAP = exterior_maps[AREA_ID]
+	random_count = game.random_range(2,7)
+	def gs_init(slot):
+		#type: (GoalSlot)->int
+		state = slot.get_scheme_state()
+		state['go_random_map'] = {
+			'counter': 0,
+			'max': random_count,
+		}
+		return 1
+	def gs_check_counter(slot):
+		# type: (GoalSlot)->int
+		state = slot.get_scheme_state()['go_random_map']
+		state['counter'] += 1
+		if state['counter'] >= state['max']:
+			return 0
+		return 1
+	cs = ControlScheme()
+	cs.__set_stages__([
+	  GoalStateStart(gs_init, ('check_area', 100),('end', 100) ),
 	
-	  GoalState(),
+	  GoalStateCondition('check_area', lambda slot: game.leader.area == AREA_ID, ('check_exterior_map', 100), ('go_area', 100), ),
+	  GoalStateCreatePushScheme('go_area', 'go_area_%d' % AREA_ID , create_goto_area, (AREA_WORLDMAP_NAME, AREA_ID), ('check_exterior_map', 100), ),
+	  
+	  GoalState('check_exterior_map', lambda slot: get_current_map() == AREA_EXTERIOR_MAP, ('go_random_map', 100), ('navigate_to_exterior_map', 100), ),
+	  GoalStateCreatePushScheme('navigate_to_exterior_map', 'go_to_map', create_scheme_navigate_to_map, (AREA_EXTERIOR_MAP, ),('check_exterior_map', 100) ),
+		
+	  GoalStateCreatePushScheme('go_random_map', 'go_to_map', create_scheme_go_random_map, (), ('wander_around', 100) ),
+	  GoalStateCreatePushScheme('wander_around', 'wander_around', create_scheme_wander_around, (), ('go_random_map', 100) ),
+	  GoalStateCondition('check_counter', gs_check_counter, ('go_random_map', 100), ('end', 100) ),
+	  
 	  GoalStateEnd(gs_wait_cb, ('end', 100), ),
 	])
 	return cs
