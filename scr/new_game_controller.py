@@ -1554,6 +1554,7 @@ def create_scheme_moathouse():
 	AREA_ID = 2
 	AREA_WORLDMAP_NAME = 'moathouse'
 	AREA_EXTERIOR_MAP = exterior_maps[AREA_ID]
+	WANDER_COUNT = 77
 	random_count = game.random_range(2,7)
 	def gs_init(slot):
 		#type: (GoalSlot)->int
@@ -1581,7 +1582,7 @@ def create_scheme_moathouse():
 	  GoalStateCreatePushScheme('navigate_to_exterior_map', 'go_to_map', create_scheme_navigate_to_map, (AREA_EXTERIOR_MAP, ),('check_exterior_map', 100) ),
 		
 	  GoalStateCreatePushScheme('go_random_map', 'go_to_map', create_scheme_go_random_map, (), ('wander_around', 100) ),
-	  GoalStateCreatePushScheme('wander_around', 'wander_around', create_scheme_wander_around, (7,), ('check_counter', 100) ),
+	  GoalStateCreatePushScheme('wander_around', 'wander_around', create_scheme_wander_around, (WANDER_COUNT,), ('check_counter', 100) ),
 	  GoalStateCondition('check_counter', gs_check_counter, ('go_random_map', 100), ('end', 100) ),
 	  
 	  GoalStateEnd(gs_wait_cb, ('end', 100), ),
