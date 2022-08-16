@@ -3,6 +3,7 @@ from utilities import location_to_axis, location_from_axis, obj_percent_hp
 import gamedialog as dlg
 from toee import *
 from collections import deque
+import tpgui
 
 
 
@@ -463,7 +464,11 @@ class ControllerBase:
         # print('Controller execute()')
         if not self.__active__:
             return
-        
+            
+        if not tpgui.game_is_focused():
+            self.schedule(100)
+            return
+
         scheme_inst = self.get_cur_scheme_instance()
         self.log_execution(scheme_inst)
         
