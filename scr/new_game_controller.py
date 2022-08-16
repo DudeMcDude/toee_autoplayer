@@ -13,7 +13,7 @@ import tpdp
 import gamedialog as dlg
 import logbook
 
-PLAYTEST_EN  = True
+PLAYTEST_EN  = False
 SKIP_LOOTING = False
 START_NEW_GAME = False
 INITIAL_LOAD = ['Moathousing', 'Did some rounds', 'Fighting!']
@@ -25,6 +25,7 @@ MOATHOUSE_EXTERIOR_MAP    = 5002
 MOATHOUSE_TOWER_MAP       = 5003
 MOATHOUSE_RUINS_MAP       = 5004
 MOATHOUSE_DUNGEON_MAP     = 5005
+MOATHOUSE_CAVE_EXIT_MAP   = 5091
 HOMMLET_INN_MAIN_MAP      = 5007
 NULB_EXTERIOR_MAP         = 5051
 TEMPLE_COURTYARD_MAP      = 5062
@@ -51,7 +52,7 @@ map_connectivity = { # TODO: automate this
 		HOMMLET_INN_MAIN_MAP: (619, 404)
 	},
 
-
+	# MOATHOUSE
 	MOATHOUSE_EXTERIOR_MAP: { # 5002
 		MOATHOUSE_TOWER_MAP: (485, 480),
 		MOATHOUSE_RUINS_MAP: (468, 452),
@@ -65,6 +66,10 @@ map_connectivity = { # TODO: automate this
 	},
 	MOATHOUSE_DUNGEON_MAP: { # 5005
 		MOATHOUSE_RUINS_MAP: (429, 410),
+		MOATHOUSE_CAVE_EXIT_MAP: (532, 560),
+	},
+	MOATHOUSE_CAVE_EXIT_MAP: { # 5091
+		MOATHOUSE_RUINS_MAP: (492, 476),
 	},
 
 	HOMMLET_INN_MAIN_MAP: { # 5007
@@ -1161,7 +1166,9 @@ def create_get_worldmap_access():
 	cs = ControlScheme()
 	worldmap_access_map_by_area = {
 		0: None,
+		2: MOATHOUSE_EXTERIOR_MAP,
 		4: TEMPLE_COURTYARD_MAP,
+		8: MOATHOUSE_CAVE_EXIT_MAP,
 	}
 	special_map_cases = {
 		TEMPLE_TOWER_EXTERIOR_MAP: TEMPLE_COURTYARD_MAP
