@@ -1916,6 +1916,18 @@ def create_loot_critter_scheme(obj):
 			select_party(x)
 			return 1
 		return 0
+	def gs_check_fogged(slot):
+		# type: (GoalSlot)->int
+		
+		for p in game.party:
+			if p.distance_to(obj_loc) < 20:
+				return 0
+		state = slot.get_scheme_state()
+		state['push_scheme'] = {
+			'id': 'critter_loot_approach',
+			'callback': (create_scheme_go_to_tile, (obj_loc,) ),
+		}
+		return 1
 
 	cs.__set_stages__([
 		# TODO: prioritize mules / unburdened
@@ -1924,7 +1936,9 @@ def create_loot_critter_scheme(obj):
 		GoalStateCondition('check_lootable_inventory', gs_check_lootable, ('select_all', 100), ('end', 100)),
 
 		GoalState('select_all', gs_select_all, ('center_on_target', 100)),
-		GoalState('center_on_target', gs_center_on_tile, ('click_object', 330), params={'param1': obj_loc}),
+		GoalState('center_on_target', gs_center_on_tile, ('check_loc_in_fog', 330), params={'param1': obj_loc}),
+		GoalState('check_loc_in_fog', gs_check_fogged, ('approach', 100), ('click_object', 100)),
+		GoalState('approach', gs_create_and_push_scheme, ('click_object', 100), ),
 		GoalState('click_object', gs_click_on_object, ('wait_for_inventory_loop', 100), ('end', 100) ),
 
 		GoalState('wait_for_inventory_loop', gs_is_widget_visible, ('select_looter', 100), ('check_is_moving', 100), params={'param1': WID_ID_LOOT_ALL_BTN}),

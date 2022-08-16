@@ -49,7 +49,7 @@ def get_object(obj_identifier):
 				return OBJ_HANDLE_NULL
 		# get closest one
 		obj_list.sort(key = lambda x: x.distance_to(loc))
-		if len(obj_list) > 0:
+		if len(obj_list) > 1:
 			print('ambiguous obj_ref, found multiple objects: %s' %(str(obj_list)) )
 		return obj_list[0]
 	return OBJ_HANDLE_NULL
