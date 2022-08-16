@@ -210,14 +210,14 @@ def move_mouse(x,y):
     # mouse_event = ctypes.windll.user32.mouse_event
     return
 
-def move_mouse_to_loc(loc):
+def move_mouse_to_loc(loc, off_x = 0, off_y = 0):
     if type(loc) is tuple:
         x,y = loc
         loc = location_from_axis(x,y)
         x,y = tpgui.world_to_screen(loc)
     else:
         x,y = tpgui.world_to_screen(loc)
-    move_mouse(x,y)
+    move_mouse(x + off_x,y + off_y)
     return
 
 def move_mouse_to_obj(obj, off_x = 0, off_y = 0):

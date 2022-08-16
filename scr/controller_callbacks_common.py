@@ -10,6 +10,14 @@ import gamedialog as dlg
 def is_ingame():
 	return len(game.party) > 0
 
+def gs_is_main_menu(slot):
+	# todo expand this..
+	wid = controller_ui_util.obtain_widget(WID_IDEN.MAIN_MENU_LOAD_GAME)
+	if wid is None:
+		# print('is_main_menu: false')
+		return 0
+	return 1	
+
 debug_prints_en = True
 def debug_print(msg):
 	if debug_prints_en:
@@ -206,6 +214,59 @@ def gs_lmb_up(slot):
 	game.mouse_set_button_state(MB_LEFT, 0)
 	return 1
 
+def gs_tweak_mouse_pos(slot):
+	#type: (GoalSlot)->int
+	''' { \n
+		'mouse_move': {'tweak_x': int, 'tweak_y': int, 'tweak_amount': int, 'use_fine': bool} \n
+		}
+	'''
+	state = slot.get_scheme_state()
+	x = state['mouse_move']['tweak_x']
+	y = state['mouse_move']['tweak_y']
+	amount = state['mouse_move']['tweak_amount']
+	use_fine = state['mouse_move']['use_fine']
+	tweak_max = state['mouse_move']['tweak_max']
+
+	radius = max( abs(x), abs(y) )
+	
+	if radius > tweak_max: # try a finer grained search
+		if amount == 1:
+			return 0
+		elif not use_fine:
+			return 0
+		state['mouse_move']['tweak_amount'] = 1
+		state['mouse_move']['tweak_x'] = 0
+		state['mouse_move']['tweak_y'] = 0
+		return 1
+
+	if x == 0 and y == -radius: # end position: top
+		state['mouse_move']['tweak_x'] = amount
+		state['mouse_move']['tweak_y'] = -radius - amount
+		return 1
+
+	dx = amount if y < 0 else -amount
+	dy = amount if x > 0 else -amount
+	if abs(y) == radius and abs(x) < radius:
+		state['mouse_move']['tweak_x'] = x + dx
+		return 1
+	if abs(x) == radius and abs(y) < radius:
+		state['mouse_move']['tweak_y'] = y + dy
+		return 1
+	# corners
+	if x == y: # both == radius or -radius
+		state['mouse_move']['tweak_x'] = x + dx
+		return 1
+	# if x == -radius and y == -radius:
+	#     state['mouse_move']['tweak_y'] = y + dy
+	#     return 1
+	if x == -y:
+		state['mouse_move']['tweak_y'] = y + dy
+		return 1
+	# if x == -radius and y == radius:
+	#     state['mouse_move']['tweak_x'] = x + dx
+	#     return 1
+	return 1
+
 #endregion widget callbacks
 
 #region navigation
@@ -233,6 +294,7 @@ def gs_center_on_tile(slot):
 
 def gs_click_and_scroll_to_tile(slot):
 	# type: (GoalSlot) -> int
+	''' old version, don't use '''
 	obj = slot.obj
 	loc = slot.param1
 	x,y = location_to_axis(loc)
@@ -298,6 +360,48 @@ def gs_click_on_loc_nearest(slot):
 
 	return 0
 
+def gs_click_on_object(slot):
+	#type: (GoalSlot)->int
+	'''
+	param1 - object ref
+	scheme_state['click_object']['obj_ref']
+	'''
+	
+	# print('gs_click_on_object')
+	state = slot.state
+	obj_ref = slot.param1
+	if obj_ref is None:
+		scheme_state = slot.get_scheme_state()
+		if 'click_object' in scheme_state:
+			obj_ref = scheme_state['click_object']['obj_ref']
+	if obj_ref is None:
+		print('gs_click_on_object: obj_ref not found' )
+	
+	obj = get_object(obj_ref)
+	if obj == OBJ_HANDLE_NULL:
+		print('gs_click_on_object: cannot find obj %s specified by obj_ref = ' % str(obj_ref) )
+		return 0
+	
+	if state is None:	
+		slot.state = {
+			'hovered': False,
+			'clicked': False,
+		}
+
+		cs = create_move_mouse_to_obj(obj_ref)
+		Playtester.get_instance().add_scheme(cs, 'move_mouse_to_obj')
+		if Playtester.get_instance().push_scheme('move_mouse_to_obj'):
+			return 1
+		# print("coudn't activate scheme " + str(slot.param1))
+		return 0
+	
+	if game.hovered == obj:
+		print('gs_click_on_object: clicking object')
+		click_mouse()
+		return 1
+	else:
+		print('Error! Hovered item is wrong, expected %s, game.hovered = %s' %( str(obj), str(game.hovered) ) )
+	return 0
 
 def gs_condition(slot):
 	# param1 - condition callback
@@ -332,6 +436,7 @@ def arrived_at(slot):
 	return 0
 
 def gs_arrive_at_tile(slot):
+	''' old version, don't use '''
     # type: (GoalSlot)->int
 	result = gs_click_and_scroll_to_tile(slot)
 	if result == 0:
@@ -440,6 +545,13 @@ def gs_handle_dialogue_prescripted(slot):
 	slot.state['reply_counter'] += 1
 	dlg_reply(0)
 	return 0
+
+def gs_click_to_talk(slot):
+	''' Similar to gs_click_on_object, except it immediately disables the automatic dialogue handler (because it could happen right away)
+	'''
+	Playtester.get_instance().dialog_handler_en(False) # halt the automatic dialogue handler
+	return gs_click_on_object(slot)
+
 #endregion
 
 def obj_is_caster(obj):

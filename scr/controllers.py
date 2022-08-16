@@ -38,6 +38,9 @@ class GoalStateCb:
     def __init__(self, cb, params = None, state = None):
         if params is None:
             params = {}
+        elif not type(params) is dict:
+            print('GoalStateCb: bad params arg: ' + str(params) )
+            exit()
         
         self.cb = cb        
         self.params = params
