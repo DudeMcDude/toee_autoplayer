@@ -387,7 +387,7 @@ def gs_click_on_object(slot):
 			'hovered': False,
 			'clicked': False,
 		}
-
+		from controller_scheme_builders import create_move_mouse_to_obj
 		cs = create_move_mouse_to_obj(obj_ref)
 		Playtester.get_instance().add_scheme(cs, 'move_mouse_to_obj')
 		if Playtester.get_instance().push_scheme('move_mouse_to_obj'):

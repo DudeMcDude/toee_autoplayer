@@ -194,3 +194,46 @@ def create_ui_camp_rest_scheme():
 
 
 
+
+
+def create_move_mouse_to_obj(obj_ref):
+	cs = ControlScheme()
+	def gs_init_move_mouse(slot):
+		#type: (GoalSlot)->int
+		state = slot.get_scheme_state()
+		obj = get_object(obj_ref)
+		print('create_move_mouse_to_obj init: obj ref is %s, loc = %s' % (str(obj) , str(location_to_axis(obj.location)) ) )
+		state['mouse_move'] = {
+			'obj': obj,
+			'tweak_x': 0,
+			'tweak_y': 0,
+			'tweak_amount': 3,
+			'tweak_max': 20,
+			'use_fine': True,
+		}
+		if obj == OBJ_HANDLE_NULL:
+			return 0
+		return 1
+
+	def gs_move_mouse_to_object(slot):
+		# type: (GoalSlot)->int
+		# print('gs_move_mouse_to_object')
+		state = slot.get_scheme_state()
+		obj = state['mouse_move']['obj']
+		
+		off_x = state['mouse_move']['tweak_x']
+		off_y = state['mouse_move']['tweak_y']
+		controller_ui_util.move_mouse_to_obj(obj, off_x, off_y)
+		return 1
+
+	cs.__set_stages__([
+		GoalStateStart( gs_init_move_mouse, ('move_mouse', 10), ('end', 10) ),
+		GoalState('move_mouse', gs_move_mouse_to_object, ('check_hovered', 10), ('end', 10) ),
+		GoalStateCondition('check_hovered', lambda slot: game.hovered == slot.get_scheme_state()['mouse_move']['obj'], ('end', 10), ('tweak', 10) ),
+		GoalState('tweak', gs_tweak_mouse_pos, ('move_mouse', 10), ('end', 10) ),
+		GoalState('end', gs_wait_cb, ('end', 10)),
+	])
+	return cs
+
+
+
