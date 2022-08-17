@@ -13,7 +13,7 @@ import tpdp
 import gamedialog as dlg
 import logbook
 
-PLAYTEST_EN  = False
+PLAYTEST_EN  = True
 SKIP_LOOTING = False
 START_NEW_GAME = False
 INITIAL_LOAD = ['Moathousing', 'Did some rounds', 'Fighting!']
@@ -258,10 +258,10 @@ def gs_master(slot):
 					slot.state['sell_loot_needed'] = False
 					pt.push_scheme('sell_loot')
 					return 0
-				random_schemes = ['goto_nulb', 'goto_brigand_tower']
+				random_schemes = ['goto_nulb', 'goto_brigand_tower', 'do_moathouse_randomly']
 				# random_schemes = [ 'goto_brigand_tower']
 				# random_schemes = [ 'goto_nulb']
-				random_schemes = ['do_moathouse_randomly']
+				# random_schemes = ['do_moathouse_randomly']
 				random_choice  = game.random_range(0, len(random_schemes)-1)
 				pt.push_scheme(random_schemes[random_choice])
 				return 0
@@ -939,7 +939,7 @@ def create_move_mouse_to_vacant_pos(loc):
 		return 1
 	cs = ControlScheme()
 	cs.__set_stages__([
-	  GoalStateStart(gs_init, ('STAGE', 100),('end', 100) ),
+	  GoalStateStart(gs_init, ('check_hovered', 100),('end', 100) ),
 	  GoalState('move_mouse', gs_move_mouse, ('check_hovered', 100),),
 	  GoalStateCondition('check_hovered', lambda slot: game.hovered == OBJ_HANDLE_NULL, ('end', 10), ('tweak', 10) ),
 	  GoalState('tweak', gs_tweak_mouse_pos, ('move_mouse', 10), ('end', 10) ),	
