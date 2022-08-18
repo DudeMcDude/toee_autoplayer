@@ -230,9 +230,8 @@ def gs_tweak_mouse_pos(slot):
 	radius = max( abs(x), abs(y) )
 	
 	if radius > tweak_max: # try a finer grained search
-		if amount == 1:
-			return 0
-		elif not use_fine:
+		if amount == 1 or not use_fine:
+			print('mouse tweak failed (reached max limit = %d)' % (tweak_max))
 			return 0
 		state['mouse_move']['tweak_amount'] = 1
 		state['mouse_move']['tweak_x'] = 0
