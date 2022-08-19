@@ -618,6 +618,7 @@ def gs_scroll_to_tile_and_click(slot):
 		print('scroll_to_tile_and_click: target not clear, needs tweaking' )
 		cs = create_move_mouse_to_vacant_pos(loc)
 		Playtester.get_instance().add_scheme(cs, 'scroll_to_tile_and_click__move_mouse')
+		slot.state['tweaked'] = True
 		Playtester.get_instance().push_scheme('scroll_to_tile_and_click__move_mouse')
 		return 0
 	if not slot.state['clicked']:
@@ -816,6 +817,7 @@ def create_scheme_go_to_tile( loc ):
 		# type: (GoalSlot)->int
 		state = slot.get_scheme_state()['go_to_tile']
 		if state['try_count'] >= 5:
+			print('create_scheme_go_to_tile: try count >= 5, aborting')
 			return 0
 		state['try_count'] += 1
 		gs_select_all(slot)
