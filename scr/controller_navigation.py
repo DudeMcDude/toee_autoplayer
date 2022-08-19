@@ -6,13 +6,7 @@ exterior_maps = {
 	AREA_ID_NULB: NULB_EXTERIOR_MAP,
 	AREA_ID_TEMPLE: TEMPLE_COURTYARD_MAP,
 }
-
-map_connectivity = { # TODO: automate this
-	HOMMLET_EXTERIOR_MAP: { #5001
-		HOMMLET_INN_MAIN_MAP: (619, 404)
-	},
-
-	# MOATHOUSE
+map_connectivity_moathouse = {
 	MOATHOUSE_EXTERIOR_MAP: { # 5002
 		MOATHOUSE_TOWER_MAP: (485, 480),
 		MOATHOUSE_RUINS_MAP: (468, 452),
@@ -31,23 +25,34 @@ map_connectivity = { # TODO: automate this
 	MOATHOUSE_CAVE_EXIT_MAP: { # 5091
 		MOATHOUSE_RUINS_MAP: (492, 476),
 	},
+}
 
-	HOMMLET_INN_MAIN_MAP: { # 5007
-		HOMMLET_EXTERIOR_MAP: (486, 489)
-	},
-
-	TEMPLE_COURTYARD_MAP: { # 5062
+map_connectivity_temple = {
+TEMPLE_COURTYARD_MAP: { # 5062
 		TEMPLE_INTERIOR: (518, 458),
 		TEMPLE_TOWER_EXTERIOR_MAP: (400, 470) 
 	},
 	
 	TEMPLE_INTERIOR: { # 5064
 		TEMPLE_COURTYARD_MAP: (493, 571),
-		TEMPLE_DUNGEON_LEVEL_1: (555, 515)
+		TEMPLE_DUNGEON_LEVEL_1: [ (555, 515) , (423, 516)],
+		TEMPLE_SECRET_STAIRCASE: (482, 487),
+	},
+
+	TEMPLE_SECRET_STAIRCASE: { # 5106
+		TEMPLE_INTERIOR: (468, 477),
+		TEMPLE_DUNGEON_LEVEL_1: (479, 475),
+		TEMPLE_DUNGEON_LEVEL_2: (480,466),
 	},
 
 	TEMPLE_DUNGEON_LEVEL_1: { # 5066
-		TEMPLE_INTERIOR: (544, 589),
+		TEMPLE_INTERIOR: [(544, 589), (418, 588)],
+		TEMPLE_DUNGEON_LEVEL_2: (558, 392),
+		TEMPLE_SECRET_STAIRCASE: (487, 517),
+	},
+
+	TEMPLE_DUNGEON_LEVEL_2: { # 5067
+		TEMPLE_DUNGEON_LEVEL_1: (564, 375),
 	},
 
 	TEMPLE_TOWER_INTERIOR_MAP: { # 5065
@@ -59,6 +64,19 @@ map_connectivity = { # TODO: automate this
 		TEMPLE_COURTYARD_MAP: (495, 552), 
 	},
 }
+
+map_connectivity = { # TODO: automate this
+	HOMMLET_EXTERIOR_MAP: { #5001
+		HOMMLET_INN_MAIN_MAP: (619, 404)
+	},
+
+	HOMMLET_INN_MAIN_MAP: { # 5007
+		HOMMLET_EXTERIOR_MAP: (486, 489)
+	},
+	
+}
+map_connectivity.update(map_connectivity_moathouse)
+map_connectivity.update(map_connectivity_temple)
 
 random_encounter_maps = [x for x in range(5070, 5079) ]
 worldmap_access_maps = random_encounter_maps + [ HOMMLET_EXTERIOR_MAP, 

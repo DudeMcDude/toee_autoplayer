@@ -15,7 +15,7 @@ import tpdp
 import gamedialog as dlg
 import logbook
 
-PLAYTEST_EN  = False
+PLAYTEST_EN  = True
 SKIP_LOOTING = False
 START_NEW_GAME = False
 INITIAL_LOAD = ['Moathousing', 'Did some rounds', 'Fighting!']
@@ -869,8 +869,9 @@ def create_scheme_enter_building( loc, tgt_map_id = None ): #TODO
 	DOOR_ICON_PROTO = 2011
 	STAIRS_DOWN_ICON_PROTO = 2014
 	STAIRS_UP_ICON_PROTO = 2015
+	SECRET_DOOR_ICON_PROTO = 2035
 	
-	MAP_TRANSFER_PROTOS = (DOOR_ICON_PROTO, STAIRS_DOWN_ICON_PROTO, STAIRS_UP_ICON_PROTO)
+	MAP_TRANSFER_PROTOS = (DOOR_ICON_PROTO, STAIRS_DOWN_ICON_PROTO, STAIRS_UP_ICON_PROTO, SECRET_DOOR_ICON_PROTO)
 	def gs_enter_building_init(slot):
 		#type: (GoalSlot)->int
 		if len(game.party) == 0 or game.leader == OBJ_HANDLE_NULL:
