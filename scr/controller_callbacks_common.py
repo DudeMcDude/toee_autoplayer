@@ -5,6 +5,8 @@ from controllers import GoalSlot
 from controller_ui_util import *
 import controller_ui_util
 import gamedialog as dlg
+from controller_navigation import map_connectivity, get_map_course
+from controller_constants import *
 
 #region utils
 def is_ingame():
@@ -274,6 +276,13 @@ def get_current_map():
 	if not is_ingame():
 		return 5000
 	return game.leader.map
+
+def can_access_worldmap():
+	from controller_navigation import worldmap_access_maps
+	if len(game.party) == 0:
+		return False
+	map_id = get_current_map()
+	return map_id in worldmap_access_maps
 
 def gs_scroll_to_tile(slot):
 	loc = slot.param1

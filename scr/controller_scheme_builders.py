@@ -3,6 +3,8 @@ from toee import PySpellStore, game
 from controller_callbacks_common import *
 from controllers import ControlScheme, GoalState, GoalStateStart,GoalStateEnd, ControllerBase, GoalStateCondition, GoalStateCreatePushScheme
 from controller_ui_util import WID_IDEN
+from controller_navigation import map_connectivity, get_map_course
+from controller_constants import *
 from utilities import *
 import controller_ui_util
 import tpdp
