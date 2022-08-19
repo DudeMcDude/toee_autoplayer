@@ -1,12 +1,23 @@
 from controller_constants import *
+from enum import Enum
+
+class LandmarkType(Enum):
+    Combat = 0,
+    Treasure = 1,
+    SecretDoor = 2,
+    Dialogue = 3,
+
 class ToeeLandmark:
     name = ''
     map = 0
     loc = None
-    def __init__(self, name, map, loc):
+    def __init__(self, name, map, loc, type = None):
         self.name = name
         self.map = map
         self.loc = loc
+        if type is None:
+            type = LandmarkType.Combat
+        self.type = type
         return
 
 moathouse_landmarks = [ 
@@ -40,7 +51,13 @@ moathouse_landmarks = [
 
 
 temple_landmarks = [
-    ToeeLandmark( 'spiral_stairs', TEMPLE_INTERIOR, (483, 485) ),
-    ToeeLandmark( '', TEMPLE_INTERIOR, () ),
+    ToeeLandmark( 'spiral_stairs', TEMPLE_INTERIOR, (483, 485), LandmarkType.SecretDoor ),
+    # ToeeLandmark( '', TEMPLE_INTERIOR, () ),
+    
+    
+    ToeeLandmark( '', TEMPLE_DUNGEON_LEVEL_1, () ),
+    ToeeLandmark( '', TEMPLE_DUNGEON_LEVEL_1, () ),
+    
+    ToeeLandmark( '', TEMPLE_DUNGEON_LEVEL_2, () ),
     
 ]

@@ -74,9 +74,11 @@ def move_mouse_to_widget(wid):
 def obtain_widget(identifier_list, widget_ids = None):
     #type: ( list[aui.TWidgetIdentifier | int | aui.TWidget | None] , list[int] )-> aui.TWidget
     '''
-    * identifier_list: If None is specified, it just looks in the entire children list of the last found widget.
-         i.e. it finds 'any' child, not just those match a specific identifier.
-         Useful for when the widget naem is garbage and there is no identifying information...
+    * identifier_list: \n
+         If None is specified, it just looks in the entire children list of the last found widget. \n
+         i.e. it finds 'any' child, not just those match a specific identifier.\n
+         Useful for when the widget name is garbage and there is no identifying information...\n
+     returns None if none found
     '''
     import autoui as aui
     widget_ids = None
@@ -92,9 +94,11 @@ def obtain_widget(identifier_list, widget_ids = None):
         return res if res.visible else None
 
     for wid_identifier in identifier_list:
-        
+        # print('wid_identifier: ' + str(wid_identifier) + ' widget_ids: ' + str(widget_ids))
         if type(wid_identifier) == int: # numbers are used to select from several widgets with identical identifiers (usually buttons/children)
             res = find_res[wid_identifier]
+            # print('res: ' + str(res))
+            find_res = [res,]
             continue
         elif len(find_res) > 1:
             print('obtain_widget: needs index to disambiguate results! ', str(find_res))
@@ -102,8 +106,8 @@ def obtain_widget(identifier_list, widget_ids = None):
         elif len(find_res) == 1: # to be used with None entry e.g. identifier_list = [('utility_bar.c 481', ), None, 3]
             widget_ids = res.children_ids # search among last widget's children
         
-        # print(wid_identifier)
         find_res = aui.find_by_identifier( wid_identifier, widget_ids )
+        # print('find_res: ' + str(find_res))
         if len(find_res) == 0:
             # print('not found')
             return None
@@ -163,10 +167,17 @@ class WID_IDEN:
 
     CHAR_UI_INVENTORY_BTNS = [ [('char_inventory_ui_inv_window_%0.2d' % x , ),] for x in range(0, 24) ]
 
+    CHAR_EDITOR_UI_CLASS_BTNS = [ ('char_editor_class_ui.c 193',), ('')]
+
+
+    PARTY_UI_LEVELUP_BTNS = [  [('party_ui_main_window',), x, ('party_ui_level_icon',)] for x in range(0,8)]
+
     POPUP_UI_OK_BTN = [('popup_ui_main_window',), ('popup_ui_button', ), 0]
     SLIDER_UI_OK_BTN = [('slider_window', ), ('slider accept button',) ]
 
     LOGBOOK_UI_KEY_ENTRY_ACCEPT = [('logbook_ui_keys_key_entry_window', ), ('logbook_ui_key_entry_accept_butn',)]
+
+
 
     
 

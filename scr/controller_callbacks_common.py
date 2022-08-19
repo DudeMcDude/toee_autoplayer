@@ -2,6 +2,7 @@ from templeplus.playtester import Playtester
 from toee import *
 from toee import game
 from controllers import GoalSlot
+import autoui as aui
 from controller_ui_util import *
 import controller_ui_util
 import gamedialog as dlg
@@ -73,6 +74,17 @@ def perform_action( action_type, actor, tgt, location ):
         result = 0
         pass
     return result
+
+def can_levelup(pc):
+	idx = get_party_idx(pc)
+	if idx < 0:
+		return False
+	wid_id = WID_IDEN.PARTY_UI_LEVELUP_BTNS[idx]
+	wid = obtain_widget(wid_id)
+	if wid is None:
+		return False
+	return True
+
 #endregion
 
 #region callbacks
@@ -562,6 +574,7 @@ def gs_click_to_talk(slot):
 
 #endregion
 
+#region action funcs
 def obj_is_caster(obj):
 	#type: (PyObjHandle)->bool
 	res = len(obj.spells_known) > 0
@@ -605,6 +618,8 @@ def gs_leader_perform_on_target(slot):
 		# return 0
 	return
 
+#endregion
+
 def perform_on_nearest(slot):
 	obj = slot.obj
 	action_type = slot.param1
@@ -628,7 +643,6 @@ def perform_on_nearest(slot):
 	# if perf_result == 0:
 		# return 0
 	return 0
-
 
 def loot_nearest_chest(slot):
 	#type: (GoalSlot) -> int
