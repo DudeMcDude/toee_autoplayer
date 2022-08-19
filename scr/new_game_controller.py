@@ -380,6 +380,7 @@ def combat_handler(slot):
 
 	def gs_combat_action_handler(slot):
 		if not game.combat_is_active():
+			print('gs_combat_action_handler: ending because combat is not active')
 			return 0
 		combat_action_handler(slot)
 		return 1

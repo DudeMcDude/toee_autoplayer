@@ -23,7 +23,7 @@ map_connectivity_moathouse = {
 		MOATHOUSE_CAVE_EXIT_MAP: (532, 560),
 	},
 	MOATHOUSE_CAVE_EXIT_MAP: { # 5091
-		MOATHOUSE_RUINS_MAP: (492, 476),
+		MOATHOUSE_DUNGEON_MAP: (492, 476),
 	},
 }
 
