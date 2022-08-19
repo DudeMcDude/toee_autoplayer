@@ -586,16 +586,21 @@ def gs_move_mouse_to_object(slot):
 
 def gs_scroll_to_tile_and_click(slot):
 	#type: (GoalSlot)->int
-	# todo make sure the tile is clear first :)
+	
 	state = slot.state
 	if state is None:	
 		slot.state = {
 			'scrolled': False,
 			'hovered': False,
+			'tweaked': False,
 			'clicked': False,
 		}
 	loc = slot.param1
-
+	if type(loc) is tuple:
+		print('scroll_to_tile_and_click: loc = %s' % (str(loc)) )
+	else:
+		print('scroll_to_tile_and_click: loc = %s' % ( str(location_to_axis(loc))) )
+	
 	if not slot.state['scrolled']:
 		center_screen_on(loc)
 		slot.state['scrolled'] = True
@@ -606,6 +611,10 @@ def gs_scroll_to_tile_and_click(slot):
 		slot.state['hovered']=True
 		return 0
 	if game.hovered != OBJ_HANDLE_NULL: # target not clear
+		if slot.state['tweaked']:
+			print('scroll_to_tile_and_click: tweaking failed, aborting...')
+			return 1
+		print('scroll_to_tile_and_click: target not clear, needs tweaking' )
 		cs = create_move_mouse_to_vacant_pos(loc)
 		Playtester.get_instance().add_scheme(cs, 'scroll_to_tile_and_click__move_mouse')
 		Playtester.get_instance().push_scheme('scroll_to_tile_and_click__move_mouse')
@@ -789,6 +798,28 @@ def create_scheme_go_to_tile( loc ):
 		loc = location_from_axis( *loc )
 	cs = ControlScheme()
 
+	def gs_go_to_tile_init(slot):
+		# type: (GoalSlot)->int
+		state = slot.get_scheme_state()
+		state['go_to_tile'] = {
+			'map':get_current_map(),
+			'try_count': 0,
+			}
+		for n in range(len(game.party)):
+			pc = game.party[n]
+			state['go_to_tile']['pc%d' % n] = pc.location
+			state['go_to_tile']['pc%d_rot' % n] = pc.rotation
+		return 1
+
+	def gs_try_count_failsafe(slot):
+		# type: (GoalSlot)->int
+		state = slot.get_scheme_state()['go_to_tile']
+		if state['try_count'] >= 5:
+			return 0
+		state['try_count'] += 1
+		gs_select_all(slot)
+		return 1
+
 	def arrived_at_check(slot):
 		#type: (GoalSlot)->int
 		state = slot.get_scheme_state()
@@ -819,14 +850,15 @@ def create_scheme_go_to_tile( loc ):
 		return 1
 	
 	cs.__set_stages__([
-		GoalStateStart( gs_select_all, ('check_loc', 500), ),
+		GoalStateStart( gs_go_to_tile_init, ('select_all', 100), ),
+		GoalState('select_all', gs_try_count_failsafe, ('check_loc', 100),('end', 100) ),
 		GoalStateCondition('check_loc', arrived_at_check, ('just_scroll', 100), ('scroll_and_click', 100), ),
 		GoalState('just_scroll', gs_center_on_tile, ('end', 700), params = {'param1': loc }),
 		
 		GoalState('scroll_and_click', gs_scroll_to_tile_and_click, ('is_moving_loop', 700), params = {'param1': loc }),
 		# GoalState('arrived_at', gs_condition, ('end', 0)        , ('is_moving_loop', 100), params={'param1': arrived_at_check}),
 		GoalStateCondition('is_moving_loop' , is_moving_check, ('is_moving_loop', 800), ('check_arrived', 100), ),
-		GoalStateCondition('check_arrived', arrived_at_check, ('end', 0), ('start', 100), ),
+		GoalStateCondition('check_arrived', arrived_at_check, ('end', 0), ('select_all', 100), ),
 		
 		GoalState('end', gs_wait_cb, ('end', 10), ),
 	])
@@ -1327,6 +1359,7 @@ def create_scheme_wander_around(count_max = 50):
 		state['wander_around'] = {
 			'tgt_loc': None,
 			'src_loc': None,
+			'bias': (0,0),
 			'count': 0,
 		}
 		state['push_scheme'] = {
@@ -1341,6 +1374,8 @@ def create_scheme_wander_around(count_max = 50):
 			x = x_src + bias[0] + game.random_range(-distance, distance)
 			y = y_src + bias[1] + game.random_range(-distance, distance)
 			# x,y = location_to_axis(game.target_random_tile_near_get( obj, distance) )
+			if ( abs(x-x_src) + abs(y - y_src) ) < distance / 2:
+				continue
 			import debug
 			result = debug.pathto(obj, x,y)
 			if result > 0:
@@ -1357,16 +1392,20 @@ def create_scheme_wander_around(count_max = 50):
 		state['count'] += 1
 		prev_src = state['src_loc']
 		prev_tgt = state['tgt_loc']
-		bias = (0,0)
+		bias = state['bias']
 		if prev_src is not None and prev_tgt is not None:
-			bias = ( (prev_tgt[0] - prev_src[0]) // 2, (prev_tgt[1] - prev_src[1]) // 2)
+			bias_adj = ( (prev_tgt[0] - prev_src[0]) , (prev_tgt[1] - prev_src[1]) )
+			bias_x = (bias[0] * 4 + bias_adj[0]) // 5
+			bias_y = (bias[1] * 4 + bias_adj[1]) // 5
+			bias = (bias_x, bias_y)
+			state['bias'] = bias
 			print("bias: " + str(bias))
 		x_src,y_src = location_to_axis(game.leader.location)
 		state['src_loc'] = (x_src,y_src)
-		x,y = get_rand_location(game.leader, 10, bias)
+		x,y = get_rand_location(game.leader, 18, bias)
 		if x <= 0 or y <= 0:
 			#try smaller radius
-			x,y = get_rand_location(game.leader, 5)
+			x,y = get_rand_location(game.leader, 10)
 			if x <= 0 or y <= 0:
 				return 0
 		tgt_loc = (x,y)
