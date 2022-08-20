@@ -508,8 +508,7 @@ class ControllerBase:
         if self.__logging__:
             print('  execute() result: %s' % str(result))
 
-        if self.get_cur_scheme() != scheme_inst.scheme: # don't advance the stage yet since we've started a new one (or resumed a previous one)
-            #TODO: handle same scheme, but in different instances?
+        if self.get_cur_scheme_instance() != scheme_inst: # don't advance the stage yet since we've started a new one (or resumed a previous one)
             if self.__logging__:
                 print('Controller: scheme changed')
             self.schedule(100)
