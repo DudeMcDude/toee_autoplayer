@@ -97,6 +97,7 @@ def gs_master(slot):
 				# random_schemes = [ 'goto_brigand_tower']
 				# random_schemes = [ 'goto_nulb']
 				# random_schemes = ['do_moathouse_randomly']
+				random_schemes = ['do_temple_randomly']
 				random_choice  = game.random_range(0, len(random_schemes)-1)
 				pt.push_scheme(random_schemes[random_choice])
 				return 0
@@ -157,6 +158,8 @@ def setup_playtester(autoplayer):
 	autoplayer.add_scheme( create_scheme_enter_building(None), 'exit_building' )
 	autoplayer.add_scheme( create_get_worldmap_access(), 'get_worldmap_access')
 	autoplayer.add_scheme( create_scheme_moathouse(), 'do_moathouse_randomly' )
+	autoplayer.add_scheme( create_scheme_temple_random(), 'do_temple_randomly' )
+	
 	
 	autoplayer.set_dialog_handler(dialog_handler)
 	autoplayer.set_combat_handler(combat_handler)
@@ -1010,8 +1013,10 @@ def create_scheme_navigate_to_map(MAP_ID):
 			if map_id != cur_map:
 				continue
 			next_map = map_course[idx+1]
-			next_loc = map_connectivity[cur_map][next_map]
-
+			if not (type(map_connectivity[cur_map][next_map]) == tuple):
+				next_loc = map_connectivity[cur_map][next_map][0]
+			else:
+				next_loc = map_connectivity[cur_map][next_map]
 			state['navigate_to_map']['next_loc'] = next_loc
 			state['navigate_to_map']['next_map'] = next_map
 			state['push_scheme']  = {
@@ -1431,6 +1436,45 @@ def create_scheme_wander_around(count_max = 50):
 def create_scheme_moathouse():
 	AREA_ID = 2
 	AREA_WORLDMAP_NAME = 'moathouse'
+	AREA_EXTERIOR_MAP = exterior_maps[AREA_ID]
+	WANDER_COUNT = 77
+	random_count = game.random_range(2,7)
+	def gs_init(slot):
+		#type: (GoalSlot)->int
+		state = slot.get_scheme_state()
+		state['go_random_map'] = {
+			'counter': 0,
+			'max': random_count,
+		}
+		return 1
+	def gs_check_counter(slot):
+		# type: (GoalSlot)->int
+		state = slot.get_scheme_state()['go_random_map']
+		state['counter'] += 1
+		if state['counter'] >= state['max']:
+			return 0
+		return 1
+	cs = ControlScheme()
+	cs.__set_stages__([
+	  GoalStateStart(gs_init, ('check_area', 100),('end', 100) ),
+	
+	  GoalStateCondition('check_area', lambda slot: game.leader.area == AREA_ID, ('check_exterior_map', 100), ('go_area', 100), ),
+	  GoalStateCreatePushScheme('go_area', 'go_area_%d' % AREA_ID , create_goto_area, (AREA_WORLDMAP_NAME, AREA_ID), ('check_exterior_map', 100), ),
+	  
+	  GoalState('check_exterior_map', lambda slot: get_current_map() == AREA_EXTERIOR_MAP, ('go_random_map', 100), ('navigate_to_exterior_map', 100), ),
+	  GoalStateCreatePushScheme('navigate_to_exterior_map', 'go_to_map', create_scheme_navigate_to_map, (AREA_EXTERIOR_MAP, ),('check_exterior_map', 100) ),
+		
+	  GoalStateCreatePushScheme('go_random_map', 'go_to_map', create_scheme_go_random_map, (), ('wander_around', 100) ),
+	  GoalStateCreatePushScheme('wander_around', 'wander_around', create_scheme_wander_around, (WANDER_COUNT,), ('check_counter', 100) ),
+	  GoalStateCondition('check_counter', gs_check_counter, ('go_random_map', 100), ('end', 100) ),
+	  
+	  GoalStateEnd(gs_wait_cb, ('end', 100), ),
+	])
+	return cs
+
+def create_scheme_temple_random():
+	AREA_ID = 4
+	AREA_WORLDMAP_NAME = 'temple of elemental evil'
 	AREA_EXTERIOR_MAP = exterior_maps[AREA_ID]
 	WANDER_COUNT = 77
 	random_count = game.random_range(2,7)
