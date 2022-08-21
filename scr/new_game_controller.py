@@ -1696,6 +1696,7 @@ def create_loot_critter_scheme(obj):
 def create_barter_ui_sell_loot(obj):
 	#type: (PyObjHandle)->None
 	cs = ControlScheme()
+	
 	def gs_init_barter_sell(slot):
 		# type: (GoalSlot)->int
 		state = slot.get_scheme_state()
@@ -1727,6 +1728,7 @@ def create_barter_ui_sell_loot(obj):
 			state['selling_loot']['slots_to_sell'].append(idx)
 		
 		return 1
+	
 	def gs_select_inventory_item_slot(slot):
 		# type: (GoalSlot)->int
 		state = slot.get_scheme_state()
@@ -1741,6 +1743,7 @@ def create_barter_ui_sell_loot(obj):
 			'wid_id' : wid_id,
 		}
 		return 1
+	
 	def gs_select_container_item_slot(slot):
 		# type: (GoalSlot)->int
 		state = slot.get_scheme_state()
@@ -1749,6 +1752,7 @@ def create_barter_ui_sell_loot(obj):
 			'wid_id' : wid_id,
 		}
 		return 1
+	
 	cs.__set_stages__([
 		GoalStateStart( gs_init_barter_sell, ('check_inventory_ui_open', 100), ('end', 100)),
 
@@ -1802,6 +1806,74 @@ def create_sell_loot():
 		GoalState('exit_barter_ui', gs_press_widget, ('end', 100), params={'param1': WID_IDEN.CHAR_UI_MAIN_EXIT}),
 
 		GoalStateEnd( gs_wait_cb, ('end', 100))
+	])
+	return cs
+
+def create_open_char_ui(obj):
+	def gs_init(slot):
+		#type: (GoalSlot)->int
+		return 1
+	
+	def gs_press_char_number(slot):
+	# type: (GoalSlot)->int
+		idx = get_party_idx(obj)
+		select_party(idx)
+		return 1
+	
+	def gs_press_inventory_hotkey(slot):
+		# type: (GoalSlot)->int
+		press_key(DIK_I)
+		return 1
+	
+	cs = ControlScheme()
+	cs.__set_stages__([
+	  GoalStateStart(gs_is_widget_visible, ('select_char', 100), ('open_char_ui', 100), params={'param1': WID_IDEN.CHAR_UI_MAIN_EXIT}),
+	  GoalState('open_char_ui', gs_press_inventory_hotkey, ('check_inventory_again', 100), ),
+	  GoalState('check_inventory_again', gs_is_widget_visible, ('select_char', 100), ('end', 100), params={'param1': WID_IDEN.CHAR_UI_MAIN_EXIT}),
+	  
+	  GoalState('select_char', gs_press_char_number, ('end', 100)),
+	  GoalStateEnd(gs_wait_cb, ('end', 100), ),
+	])
+	return cs
+
+def create_memorize_spells(obj):
+	#type: (PyObjHandle)->ControlScheme
+	def gs_init_memorize_spells(slot):
+		#type: (GoalSlot)->int
+		print('gs_init_memorize_spells')
+		state = slot.get_scheme_state()
+		known = obj.spells_known
+		if len(known) == 0:
+			return 0
+		state['memorize_spells'] = {
+			'known': known
+		}
+		return 1
+
+	def gs_select_known_spell(slot):
+		# type: (GoalSlot)->int
+		return 1
+
+	def gs_select_memorized_spell_slot(slot):
+		# type: (GoalSlot)->int
+		return 1
+	cs = ControlScheme()
+	cs.__set_stages__([
+		GoalStateStart(lambda slot: len(obj.spells_known) > 0, ('open_char_ui', 100), ('end', 100)),
+		GoalState('open_char_ui', gs_create_and_push_scheme, ('open_spells_ui', 100), params={'param1': 'memorize_open_char_ui', 'param2': (create_open_char_ui, (obj,))}),
+
+		GoalStateCondition('open_spells_ui', gs_press_widget, ('check_memorized_slots', 100), params={'param1': WID_IDEN.CHAR_UI_MAIN_SELECT_SPELLS_BTN}),
+		GoalStateCondition('check_memorized_slots', gs_is_widget_visible, ('init_spell_selection', 100), ('end', 100), params={'param1': WID_IDEN.CHAR_SPELLS_UI_MEMORIZE_SPELL_WINDOWS[0]}),
+		
+	  	GoalState('init_spell_selection', gs_init_memorize_spells, ('end', 100),('end', 100) ),
+
+		GoalState('move_mouse', gs_move_mouse_to_widget, ('mouse_down', 330), ('end', 100), ),
+		GoalState('mouse_down', gs_lmb_down, ('select_container_item_slot', 100),  ),
+		GoalState('select_container_item_slot', gs_select_container_item_slot, ('move_mouse_to_container', 200), ),
+		GoalState('move_mouse_to_container', gs_move_mouse_to_widget, ('mouse_up', 330), ('end', 100), ),
+		GoalState('mouse_up', gs_lmb_up, ('is_transfer_slider_active', 100),  ),
+
+	  GoalStateEnd(gs_wait_cb, ('end', 100), ),
 	])
 	return cs
 #endregion

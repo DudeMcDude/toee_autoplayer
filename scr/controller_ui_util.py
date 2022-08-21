@@ -166,6 +166,11 @@ class WID_IDEN:
     CHAR_LOOTING_UI_BTNS = [ [('char_looting_ui_loot_window_%0.2d' % x ,),] for x in range(0, 12) ]
 
     CHAR_UI_INVENTORY_BTNS = [ [('char_inventory_ui_inv_window_%0.2d' % x , ),] for x in range(0, 24) ]
+    CHAR_UI_MAIN_SELECT_SPELLS_BTN = [ ('char_ui_main_window',), ('char_ui_main_select_spells_button',)]
+
+    CHAR_SPELLS_UI_SPELLBOOK_SPELL_WINDOWS = [ [ ('char_spells_ui_spellbook_spell_windows',), x] for x in range(0,18) ]
+    CHAR_SPELLS_UI_MEMORIZE_SPELL_WINDOWS  = [ [ ('char_spells_ui_memorize_spell_windows',), x] for x in range(0,18) ]
+
 
     CHAR_EDITOR_UI_CLASS_BTNS = [ ('char_editor_class_ui.c 193',), ('')]
 
