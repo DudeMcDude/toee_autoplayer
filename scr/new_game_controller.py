@@ -16,7 +16,7 @@ import gamedialog as dlg
 import logbook
 import debug
 
-PLAYTEST_EN  = False
+PLAYTEST_EN  = True
 SKIP_LOOTING = False
 START_NEW_GAME = False
 INITIAL_LOAD = ['Moathousing', 'Did some rounds', 'Fighting!']
@@ -1410,7 +1410,7 @@ def create_scheme_wander_around(count_max = 50):
 		prev_tgt = state['tgt_loc']
 		bias = state['bias']
 		if prev_src is not None and prev_tgt is not None:
-			bias_adj = ( (prev_tgt[0] - prev_src[0]) , (prev_tgt[1] - prev_src[1]) )
+			bias_adj = ( (2*(prev_tgt[0] - prev_src[0])) // 3 , (2*(prev_tgt[1] - prev_src[1])) // 3 )
 			bias_x = (bias[0] * 4 + bias_adj[0]) // 5
 			bias_y = (bias[1] * 4 + bias_adj[1]) // 5
 			bias = (bias_x, bias_y)
