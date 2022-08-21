@@ -63,6 +63,8 @@ def get_object(obj_identifier):
 		if len(obj_list) > 1:
 			print('ambiguous obj_ref, found multiple objects: %s' %(str(obj_list)) )
 		return obj_list[0]
+	elif isinstance(obj_identifier, PyObjHandle):
+		return obj_identifier
 	return OBJ_HANDLE_NULL
 
 
@@ -311,6 +313,17 @@ def gs_center_on_tile(slot):
 	loc = slot.param1
 	center_screen_on( loc )
 	return 1
+
+def gs_center_on_obj(slot):
+	''' param1 - obj_ref (used with get_object)'''
+	obj_ref = slot.param1
+	obj = get_object(obj_ref)
+	if obj == OBJ_HANDLE_NULL:
+		return 0
+	loc = obj.location
+	center_screen_on(loc)
+	return 1
+
 
 def gs_click_and_scroll_to_tile(slot):
 	# type: (GoalSlot) -> int
@@ -568,6 +581,8 @@ def gs_handle_dialogue_prescripted(slot):
 
 def gs_click_to_talk(slot):
 	''' Similar to gs_click_on_object, except it immediately disables the automatic dialogue handler (because it could happen right away)
+	param1 - object ref
+	scheme_state['click_object']['obj_ref']
 	'''
 	Playtester.get_instance().dialog_handler_en(False) # halt the automatic dialogue handler
 	return gs_click_on_object(slot)

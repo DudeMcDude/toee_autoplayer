@@ -237,5 +237,34 @@ def create_move_mouse_to_obj(obj_ref):
 	])
 	return cs
 
+def create_talk_to(obj_ref):
+	def gs_init(slot):
+		#type: (GoalSlot)->int
+		obj = get_object(obj_ref)
+		if obj == OBJ_HANDLE_NULL:
+			return 0
+		return 1
 
+	def gs_click_mouse(slot):
+		# type: (GoalSlot)->int
+		Playtester.get_instance().dialog_handler_en(False) # halt the automatic dialogue handler
+		click_mouse()
+		return 1
+		
+	def gs_print_error(slot):
+		print('Error! Hovered item is wrong, expected %s, game.hovered = %s' %( str(obj), str(game.hovered) ) )
+		return 1
+	cs = ControlScheme()
+	# print('gs_click_on_object')
+	
+	cs.__set_stages__([
+	  GoalStateStart(gs_init, ('scroll_to', 100),('end', 100) ),
+	  GoalState('scroll_to', gs_center_on_obj, ('move_mouse', 100), ('end', 100), params={'param1': obj_ref} ),
+	  GoalState('move_mouse', gs_create_and_push_scheme, ('check_hovered', 100), params={'param1': 'create_talk_to__move_mouse', 'param2': (create_move_mouse_to_obj, (obj_ref,))} ),
+	  GoalStateCondition('check_hovered', lambda slot: game.hovered == get_object(obj_ref), ('hover_ok', 100), ('end', 100)),
+	  GoalState('hover_error', gs_print_error, ('end', 100)),
+	  GoalState('hover_ok', gs_click_mouse, ('check_hovered', 100), params={'param1': 'create_talk_to__move_mouse', 'param2': (create_move_mouse_to_obj, (obj_ref,))} ),
+	  GoalStateEnd(gs_wait_cb, ('end', 100), ),
+	])
+	return cs
 

@@ -260,6 +260,8 @@ def rightclick_at(x,y, screenspace = 0):
     return
 
 def center_screen_on(loc):
+    ''' loc - tuple or location
+    '''
     if type(loc) is tuple:
         x,y = loc
         loc = location_from_axis(x,y)

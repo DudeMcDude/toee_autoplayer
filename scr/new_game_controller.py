@@ -14,8 +14,9 @@ import controller_ui_util
 import tpdp
 import gamedialog as dlg
 import logbook
+import debug
 
-PLAYTEST_EN  = True
+PLAYTEST_EN  = False
 SKIP_LOOTING = False
 START_NEW_GAME = False
 INITIAL_LOAD = ['Moathousing', 'Did some rounds', 'Fighting!']
@@ -1429,12 +1430,23 @@ def create_scheme_wander_around(count_max = 50):
 		args = (tgt_loc,)
 		slot_state['push_scheme']['callback'] =\
 			 (create_scheme_go_to_tile, args )
+		
+		# check if there's someone to talk to
+		vlist = [x for x in game.obj_list_range(game.leader.location, 7, OLC_NPC) 
+			if (not (x in game.party) and not game.leader.has_met(x)) and not x.is_unconscious() and debug.pathto(game.leader, *location_to_axis(x.location) > 0 ) ]
+		vlist.sort()
+		if len(vlist) > 0:
+			args = (vlist[0],)
+			slot_state['push_scheme']['callback'] =\
+			 (create_talk_to, args )
+			
+		
 		return 1
 	cs = ControlScheme()
 	cs.__set_stages__([
 	  GoalStateStart(gs_init, ('configure', 100),('end', 100) ),
-	  GoalState('configure', gs_configure_wander, ('move', 100), ('end', 100)),
-	  GoalState('move', gs_create_and_push_scheme , ('configure', 100), ('end', 100), ),
+	  GoalState('configure', gs_configure_wander, ('execute', 100), ('end', 100)),
+	  GoalState('execute', gs_create_and_push_scheme , ('configure', 100), ('end', 100), ),
 	  GoalStateEnd(gs_wait_cb, ('end', 100), ),
 	])
 	return cs
