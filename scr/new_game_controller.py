@@ -85,6 +85,8 @@ def gs_master(slot):
 			slot.state['try_go_outside_counter'] = 0
 		
 		if leader.area == 1: # Hommlet
+			if game.party[0].is_unconscious():
+				game.party[0].obj_set_int(obj_f_hp_damage, 0) # can't get out of welcome wench when party[0] is dead
 			if leader.map == 5001: # Hommlet main
 				if slot.state['rest_needed']:
 					slot.state['rest_needed'] = False
