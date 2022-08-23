@@ -527,7 +527,8 @@ class ControllerBase:
         scheme_inst = self.get_cur_scheme_instance()
         if scheme_inst.is_ended():
             self.pop_scheme()
-            self.execute()
+            self.schedule(100)
+            # self.execute() # to allow UI stuff to update if needed
             return
         
         slot = self.__goal_slot__

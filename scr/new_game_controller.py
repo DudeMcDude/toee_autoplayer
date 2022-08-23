@@ -1866,10 +1866,14 @@ def create_memorize_spells(obj):
 		GoalStateStart(lambda slot: len(obj.spells_known) > 0, ('open_char_ui', 100), ('end', 100)),
 		GoalState('open_char_ui', gs_create_and_push_scheme, ('open_spells_ui', 100), params={'param1': 'memorize_open_char_ui', 'param2': (create_open_char_ui, (obj,))}),
 
-		GoalStateCondition('open_spells_ui', gs_press_widget, ('check_memorized_slots', 100), params={'param1': WID_IDEN.CHAR_UI_MAIN_SELECT_SPELLS_BTN}),
-		GoalStateCondition('check_memorized_slots', gs_is_widget_visible, ('init_spell_selection', 100), ('end', 100), params={'param1': WID_IDEN.CHAR_SPELLS_UI_MEMORIZE_SPELL_WINDOWS[0]}),
+		GoalState('open_spells_ui', gs_press_widget, ('check_memorized_slots', 100), params={'param1': WID_IDEN.CHAR_UI_MAIN_SELECT_SPELLS_BTN}),
+		GoalState('check_memorized_slots', gs_is_widget_visible, ('init_spell_selection', 100), ('end', 100), params={'param1': WID_IDEN.CHAR_SPELLS_UI_MEMORIZE_SPELL_WINDOWS[0]}),
 		
-	  	GoalState('init_spell_selection', gs_init_memorize_spells, ('end', 100),('end', 100) ),
+	  	GoalState('init_spell_selection', gs_init_memorize_spells, ('select_memorization_slot', 100),('end', 100) ),
+		
+		GoalState('select_memorization_slot', gs_select_memorized_spell_slot, ('', 100), ('end', 100) ),
+		GoalState('select_spell_known', gs_select_known_spell, ('select_spell_known', 100), ('', 100) ),
+		
 
 		GoalState('move_mouse', gs_move_mouse_to_widget, ('mouse_down', 330), ('end', 100), ),
 		GoalState('mouse_down', gs_lmb_down, ('select_container_item_slot', 100),  ),

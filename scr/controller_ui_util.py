@@ -133,7 +133,7 @@ class WID_IDEN:
     ]
     PARTY_ALIGNMENT_ACCEPT_BTN = [('pc_creation.c 1566'), ('pc_creation.c 1641'), ]
     CHAR_POOL_CHARS = [ 
-        [('party_pool.c 1349'), ('party_pool.c 1383'), x] for x in range(8) ]
+        [('party_pool.c 1349'), ('party_pool.c 1383'), x] for x in range(7) ]
     
     CHAR_POOL_ADD_BTN = [('party_pool.c 885'), ('party_pool.c 914')]
 

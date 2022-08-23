@@ -21,6 +21,12 @@ def gs_is_main_menu(slot):
 		return 0
 	return 1	
 
+def playtester_push_scheme(cs, id):
+	pt = Playtester.get_instance()
+	pt.add_scheme(cs, id)
+	result = pt.push_scheme(id)
+	return result
+
 debug_prints_en = True
 def debug_print(msg):
 	if debug_prints_en:
@@ -129,14 +135,16 @@ def gs_scan_get_widget_from_list(slot):
 	wid_list = slot.param1
 	condition = slot.param2
 	state = slot.get_scheme_state()
+	if not 'widget_scan' in state:
+		print('gs_scan_get_widget_from_list: initing scheme state')
+		state['widget_scan'] = {
+				'idx': -1,
+				'found': False,
+				'wid_id': None, 
+				'text_contents': [],
+			}
 	
-	state['widget_scan'] = {
-			'idx': -1,
-			'found': False,
-			'wid_id': None
-		}
-	# todo: scrolling
-
+	text_contents = []
 	for idx in range(len(wid_list)):
 		state['widget_scan']['idx'] = idx
 		# print('scan_get_widget: idx %d' % idx)
@@ -152,6 +160,8 @@ def gs_scan_get_widget_from_list(slot):
 		if wid is None:
 			# print('Wid is None!')
 			continue
+		text_contents.append(wid.rendered_text)
+
 		# print('obtained: %s, now checking condition' % str(wid))
 		if callable(condition):
 			res = condition(slot)
@@ -165,7 +175,40 @@ def gs_scan_get_widget_from_list(slot):
 		# else:
 			# print('what happened to you, condition? %s' % str(condition))
 	
+	# None found, try scrolling down
+	print('gs_scan_get_widget_from_list: none found, trying to scroll down')
+	should_scroll = False
+	
+	
+	saved_contents = state['widget_scan']['text_contents']
+	print('current text contents: %s' % text_contents)
+	print('saved text contents: %s' % saved_contents)
+	
+	if len(saved_contents) != len(text_contents):
+		print('gs_scan_get_widget_from_list: should scroll due to len diff')
+		should_scroll = True
+	else:
+		for idx in range(len(text_contents)):
+			if text_contents[idx] != saved_contents[idx]:
+				print('gs_scan_get_widget_from_list: should scroll due to content diff at idx = %d' % idx)
+				should_scroll = True
+				break
+
+	if not should_scroll:
+		print('gs_scan_get_widget_from_list: should not scroll!')
+		print('gs_scan_get_widget_from_list: saved contents: %s, current contents: %s' % (saved_contents, text_contents))
+		return 1
+
+	print('gs_scan_get_widget_from_list: scrolling down')
+	# save contents for later comparison
+	state['widget_scan']['text_contents'] = text_contents
+	
+	# push scrolling scheme
+	from controller_scheme_builders import create_scheme_scroll
+	cs = create_scheme_scroll(wid_list[0], 1)
+	playtester_push_scheme(cs, 'widget_scan_scroll')
 	return 1
+
 def gs_move_mouse_to_widget(slot):
 	# type: (GoalSlot)->int
 	'''param1 - widget identifier\n
@@ -424,8 +467,7 @@ def gs_click_on_object(slot):
 		}
 		from controller_scheme_builders import create_move_mouse_to_obj
 		cs = create_move_mouse_to_obj(obj_ref)
-		Playtester.get_instance().add_scheme(cs, 'move_mouse_to_obj')
-		if Playtester.get_instance().push_scheme('move_mouse_to_obj'):
+		if playtester_push_scheme(cs, 'move_mouse_to_obj'):
 			return 1
 		# print("coudn't activate scheme " + str(slot.param1))
 		return 0
@@ -838,8 +880,7 @@ def gs_create_and_push_scheme(slot):
 		cs = create_cb(*args)
 		slot.state = {}
 		
-		Playtester.get_instance().add_scheme(cs, id)
-		if Playtester.get_instance().push_scheme(id):
+		if playtester_push_scheme(cs,id):
 			return 1
 		# print("coudn't activate scheme " + str(slot.param1))
 		return 1

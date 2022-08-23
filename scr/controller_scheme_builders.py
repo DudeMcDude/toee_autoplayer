@@ -194,9 +194,16 @@ def create_ui_camp_rest_scheme():
 		[GoalState('end', gs_wait_cb, ('end', 100), ) ,	])
 	return cs
 
-
-
-
+def create_scheme_scroll(wid_identifier, scroll_delta):
+	'''
+	scroll_delta: 1 for scroll down, -1 for up
+	'''
+	cs = ControlScheme()
+	cs.__set_stages__([
+	  GoalStateStart(gs_move_mouse_to_widget, ('end', 100), params={'param1': wid_identifier}),
+	  GoalStateEnd(lambda slot: game.mouse_scroll(-scroll_delta) or 1, ('end', 100), ),
+	])
+	return cs
 
 def create_move_mouse_to_obj(obj_ref):
 	cs = ControlScheme()
