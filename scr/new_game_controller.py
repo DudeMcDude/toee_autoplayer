@@ -1674,8 +1674,10 @@ def create_loot_critter_scheme(obj):
 		GoalState('click_object', gs_click_on_object, ('wait_for_inventory_loop', 100), ('end', 100) ),
 
 		GoalState('wait_for_inventory_loop', gs_is_widget_visible, ('select_looter', 100), ('check_is_moving', 100), params={'param1': WID_ID_LOOT_ALL_BTN}),
-		GoalState('check_is_moving', is_moving_check, ('check_is_moving', 100), ('wait_for_inventory_loop', 100), ),
-
+		GoalState('check_is_moving', is_moving_check, ('check_is_moving', 100), ('anti_hang', 100), ),
+		GoalState('anti_hang', gs_anti_hang, ('wait_for_inventory_loop', 100), ('end', 100)),
+		
+		# after bringing up the looting UI, select party member to do the looting
 		GoalState('select_looter', gs_select_looter, ('press_loot_all', 100), ('exit_inventory', 100)),
 		GoalState('press_loot_all', gs_press_widget, ('check_inventory_full_dlg', 100), params={'param1': WID_ID_LOOT_ALL_BTN}),
 

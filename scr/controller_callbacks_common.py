@@ -190,6 +190,8 @@ def gs_move_mouse_to_widget(slot):
 
 def gs_is_widget_visible(slot):
 	#type: (GoalSlot)->int
+	''' param1 - TWidgetIdentifier
+	'''
 	wid_identifier = slot.param1
 	wid = controller_ui_util.obtain_widget(wid_identifier)
 	if wid is None:
@@ -456,6 +458,20 @@ def gs_condition_map_change(slot):
 			return 1
 		# print('map change check: no change %s' % ( str(state['map_change_check']['map']) ))
 		return 0
+
+def gs_anti_hang(slot):
+	# type: (GoalSlot)->int
+	ANTI_HANG_MAX = 10
+	state = slot.get_scheme_state()
+	if not 'anti_hang' in state:
+		state['anti_hang'] = {
+			'count': 0,
+		}
+		return 1
+	state['anti_hang']['count'] += 1
+	if state['anti_hang']['count'] >= ANTI_HANG_MAX:
+		return 0
+	return 1
 
 def arrived_at(slot):
     # type: (GoalSlot)->int

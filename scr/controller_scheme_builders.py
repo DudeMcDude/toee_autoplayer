@@ -243,6 +243,8 @@ def create_talk_to(obj_ref):
 		obj = get_object(obj_ref)
 		if obj == OBJ_HANDLE_NULL:
 			return 0
+		if obj.is_unconscious():
+			return 0
 		return 1
 
 	def gs_click_mouse(slot):
@@ -252,7 +254,7 @@ def create_talk_to(obj_ref):
 		return 1
 		
 	def gs_print_error(slot):
-		print('Error! Hovered item is wrong, expected %s, game.hovered = %s' %( str(obj), str(game.hovered) ) )
+		print('Error! Hovered item is wrong, expected %s, game.hovered = %s' %( str(get_object(obj_ref)), str(game.hovered) ) )
 		return 1
 	cs = ControlScheme()
 	# print('gs_click_on_object')
