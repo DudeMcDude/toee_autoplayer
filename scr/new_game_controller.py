@@ -859,7 +859,12 @@ def create_scheme_go_to_tile( loc ):
 		return 1
 	
 	cs.__set_stages__([
-		GoalStateStart( gs_go_to_tile_init, ('select_all', 100), ),
+		GoalStateStart( gs_go_to_tile_init, ('is_inventory_open', 100), ),
+
+		GoalState('is_inventory_open', gs_is_widget_visible, ('close_inventory', 100), ('select_all', 100), params={'param1': WID_IDEN.CHAR_UI_MAIN_EXIT}),
+		GoalState('close_inventory', gs_press_widget, ('select_all', 100), params={'param1': WID_IDEN.CHAR_UI_MAIN_EXIT}),
+
+
 		GoalState('select_all', gs_try_count_failsafe, ('check_loc', 100),('end', 100) ),
 		GoalStateCondition('check_loc', arrived_at_check, ('just_scroll', 100), ('scroll_and_click', 100), ),
 		GoalState('just_scroll', gs_center_on_tile, ('end', 700), params = {'param1': loc }),
