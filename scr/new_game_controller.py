@@ -1122,7 +1122,7 @@ def create_goto_area(area_name, area_id = None):
 		idx = state['widget_scan']['idx']
 		wid_list = slot.param1
 		wid_id = wid_list[idx]
-		print('checking widget:', wid_id)
+		# print('checking widget:', wid_id)
 		wid = controller_ui_util.obtain_widget(wid_id)
 		if wid is None:
 			# print('not found')
@@ -1850,7 +1850,9 @@ def create_memorize_spells(obj):
 		if len(known) == 0:
 			return 0
 		state['memorize_spells'] = {
-			'known': known
+			'known': known,
+			'memo_wid': None,
+			'spell_level': -1, # spell level of the current slot being filled
 		}
 		return 1
 
@@ -1858,9 +1860,38 @@ def create_memorize_spells(obj):
 		# type: (GoalSlot)->int
 		return 1
 
+	def memoslot_check(slot):
+		#type: (GoalSlot)->int
+		state = slot.get_scheme_state()
+		idx = state['widget_scan']['idx']
+		wid_list = slot.param1
+		wid_id = wid_list[idx]
+		print('checking widget:', wid_id)
+		wid = controller_ui_util.obtain_widget(wid_id)
+		if wid is None:
+			# print('not found')
+			return False
+		if not wid.is_button_enabled:
+			# print('button not enabled')
+			return False
+		print('obtained widget: %s'%str(wid))
+		print('rendered text: ', wid.rendered_text)
+		if wid.rendered_text == '':
+			return True
+
+		if wid.rendered_text[-1] in [str(x) for x in range(0,10)]:
+			state['memorize_spells']['spell_level'] = int(wid.rendered_text[-1])
+		return False
+
 	def gs_select_memorized_spell_slot(slot):
 		# type: (GoalSlot)->int
-		return 1
+		state = slot.get_scheme_state()
+		memo_wid = state['widget_scan']['wid_id']
+		state['memorize_spells']['memo_wid'] = memo_wid
+		if memo_wid:
+			return 1
+		return 0
+
 	cs = ControlScheme()
 	cs.__set_stages__([
 		GoalStateStart(lambda slot: len(obj.spells_known) > 0, ('open_char_ui', 100), ('end', 100)),
@@ -1869,9 +1900,11 @@ def create_memorize_spells(obj):
 		GoalState('open_spells_ui', gs_press_widget, ('check_memorized_slots', 100), params={'param1': WID_IDEN.CHAR_UI_MAIN_SELECT_SPELLS_BTN}),
 		GoalState('check_memorized_slots', gs_is_widget_visible, ('init_spell_selection', 100), ('end', 100), params={'param1': WID_IDEN.CHAR_SPELLS_UI_MEMORIZE_SPELL_WINDOWS[0]}),
 		
-	  	GoalState('init_spell_selection', gs_init_memorize_spells, ('select_memorization_slot', 100),('end', 100) ),
+	  	GoalState('init_spell_selection', gs_init_memorize_spells, ('scan_memorization_slots', 100),('end', 100) ),
 		
-		GoalState('select_memorization_slot', gs_select_memorized_spell_slot, ('', 100), ('end', 100) ),
+		GoalState('scan_memorization_slots', gs_scan_get_widget_from_list, ('check_memorization_slot', 100), ('end', 100), params={'param1':  WID_IDEN.CHAR_SPELLS_UI_MEMORIZE_SPELL_WINDOWS, 'param2': memoslot_check } ),
+		GoalState('check_memorization_slot', gs_select_memorized_spell_slot, ('select_spell_known', 100), ('end', 100) ),
+
 		GoalState('select_spell_known', gs_select_known_spell, ('select_spell_known', 100), ('', 100) ),
 		
 
