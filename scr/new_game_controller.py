@@ -1418,6 +1418,8 @@ def create_scheme_wander_around(count_max = 50):
 		state = slot_state['wander_around']
 		if state['count'] >= state['count_max']:
 			return 0
+		if group_percent_hp(game.leader) < 66: # go rest if low on HP (or high casualties!)
+			return 0
 		state['count'] += 1
 		prev_src = state['src_loc']
 		prev_tgt = state['tgt_loc']
@@ -1496,6 +1498,8 @@ def create_scheme_moathouse():
 		state['counter'] += 1
 		if state['counter'] >= state['max']:
 			return 0
+		if group_percent_hp(game.leader) < 66: # go rest if low on HP (or high casualties!)
+			return 0
 		return 1
 	cs = ControlScheme()
 	cs.__set_stages__([
@@ -1534,6 +1538,8 @@ def create_scheme_temple_random():
 		state = slot.get_scheme_state()['go_random_map']
 		state['counter'] += 1
 		if state['counter'] >= state['max']:
+			return 0
+		if group_percent_hp(game.leader) < 66: # go rest if low on HP (or high casualties!)
 			return 0
 		return 1
 	cs = ControlScheme()
