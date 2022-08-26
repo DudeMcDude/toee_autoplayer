@@ -5,7 +5,7 @@ from controllers import ControlScheme, GoalState, GoalStateStart,GoalStateEnd, C
 
 from controller_callbacks_common import *
 from controller_scheme_builders import *
-from controller_navigation import map_connectivity, get_map_course, exterior_maps, worldmap_access_maps
+from controller_navigation import map_connectivity, get_map_course, exterior_maps, random_wander_amount
 from controller_constants import *
 
 from utilities import *
@@ -859,7 +859,12 @@ def create_scheme_go_to_tile( loc ):
 		return 1
 	
 	cs.__set_stages__([
-		GoalStateStart( gs_go_to_tile_init, ('select_all', 100), ),
+		GoalStateStart( gs_go_to_tile_init, ('is_inventory_open', 100), ),
+
+		GoalState('is_inventory_open', gs_is_widget_visible, ('close_inventory', 100), ('select_all', 100), params={'param1': WID_IDEN.CHAR_UI_MAIN_EXIT}),
+		GoalState('close_inventory', gs_press_widget, ('select_all', 100), params={'param1': WID_IDEN.CHAR_UI_MAIN_EXIT}),
+
+
 		GoalState('select_all', gs_try_count_failsafe, ('check_loc', 100),('end', 100) ),
 		GoalStateCondition('check_loc', arrived_at_check, ('just_scroll', 100), ('scroll_and_click', 100), ),
 		GoalState('just_scroll', gs_center_on_tile, ('end', 700), params = {'param1': loc }),
@@ -1370,15 +1375,23 @@ def create_scheme_go_random_map():
 	])
 	return cs
 
-def create_scheme_wander_around(count_max = 50):
+def create_scheme_wander_around(count_max_def = 50):
 	def gs_init(slot):
 		#type: (GoalSlot)->int
 		state = slot.get_scheme_state()
+
+		cur_map = get_current_map()
+		if cur_map in random_wander_amount:
+			count_max = random_wander_amount[cur_map]
+		else:
+			count_max = count_max_def
+		
 		state['wander_around'] = {
 			'tgt_loc': None,
 			'src_loc': None,
 			'bias': (0,0),
 			'count': 0,
+			'count_max': count_max,
 		}
 		state['push_scheme'] = {
 			'id': 'wander_goto_tile',
@@ -1405,21 +1418,35 @@ def create_scheme_wander_around(count_max = 50):
 		slot_state = slot.get_scheme_state()
 		
 		state = slot_state['wander_around']
-		if state['count'] >= count_max:
+		if state['count'] >= state['count_max']:
+			return 0
+		if group_percent_hp(game.leader) < 66: # go rest if low on HP (or high casualties!)
 			return 0
 		state['count'] += 1
 		prev_src = state['src_loc']
 		prev_tgt = state['tgt_loc']
 		bias = state['bias']
+		x_src,y_src = location_to_axis(game.leader.location)
+		last_diff = (0,0)
+
 		if prev_src is not None and prev_tgt is not None:
-			bias_adj = ( (2*(prev_tgt[0] - prev_src[0])) // 3 , (2*(prev_tgt[1] - prev_src[1])) // 3 )
+			last_diff = (prev_tgt[0] - prev_src[0], prev_tgt[1] - prev_src[1])
+			bias_adj = ( (2*last_diff[0]) // 3 , (2*last_diff[1]) // 3 )
 			bias_x = (bias[0] * 4 + bias_adj[0]) // 5
 			bias_y = (bias[1] * 4 + bias_adj[1]) // 5
 			bias = (bias_x, bias_y)
+
+			if abs(prev_tgt[0] - x_src) + abs(prev_tgt[1] - y_src) >= 6: 
+				print('zeroing bias because could not reach prev destination')
+				bias = (0,0)
+
 			state['bias'] = bias
 			print("bias: " + str(bias))
-		x_src,y_src = location_to_axis(game.leader.location)
+		
+		
 		state['src_loc'] = (x_src,y_src)
+		# if abs(last_diff[0]) + abs(last_diff[1]) >= 7:
+		# 	x,y = get_rand_location(game.leader, 5, last_diff)
 		x,y = get_rand_location(game.leader, 18, bias)
 		if x <= 0 or y <= 0:
 			#try smaller radius
@@ -1473,6 +1500,8 @@ def create_scheme_moathouse():
 		state['counter'] += 1
 		if state['counter'] >= state['max']:
 			return 0
+		if group_percent_hp(game.leader) < 66: # go rest if low on HP (or high casualties!)
+			return 0
 		return 1
 	cs = ControlScheme()
 	cs.__set_stages__([
@@ -1511,6 +1540,8 @@ def create_scheme_temple_random():
 		state = slot.get_scheme_state()['go_random_map']
 		state['counter'] += 1
 		if state['counter'] >= state['max']:
+			return 0
+		if group_percent_hp(game.leader) < 66: # go rest if low on HP (or high casualties!)
 			return 0
 		return 1
 	cs = ControlScheme()

@@ -98,6 +98,14 @@ worldmap_access_maps = random_encounter_maps + [ HOMMLET_EXTERIOR_MAP,
     QUARRY_MAP,
      ]
 
+random_wander_amount = {
+	MOATHOUSE_TOWER_MAP: 3,
+	TEMPLE_SECRET_STAIRCASE: 3, 
+	TEMPLE_TOWER_EXTERIOR_MAP: 20,
+	TEMPLE_COURTYARD_MAP: 25,
+	TEMPLE_INTERIOR: 35,
+}
+
 class CourseSearchNode:
 	id = -1
 	prev = -1
