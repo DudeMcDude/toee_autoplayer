@@ -1379,11 +1379,17 @@ def create_scheme_wander_around(count_max = 50):
 	def gs_init(slot):
 		#type: (GoalSlot)->int
 		state = slot.get_scheme_state()
+
+		cur_map = get_current_map()
+		if cur_map in random_wander_amount:
+			count_max = random_wander_amount[cur_map]
+		
 		state['wander_around'] = {
 			'tgt_loc': None,
 			'src_loc': None,
 			'bias': (0,0),
 			'count': 0,
+			'count_max': count_max,
 		}
 		state['push_scheme'] = {
 			'id': 'wander_goto_tile',
@@ -1410,21 +1416,33 @@ def create_scheme_wander_around(count_max = 50):
 		slot_state = slot.get_scheme_state()
 		
 		state = slot_state['wander_around']
-		if state['count'] >= count_max:
+		if state['count'] >= state['count_max']:
 			return 0
 		state['count'] += 1
 		prev_src = state['src_loc']
 		prev_tgt = state['tgt_loc']
 		bias = state['bias']
+		x_src,y_src = location_to_axis(game.leader.location)
+		last_diff = (0,0)
+
 		if prev_src is not None and prev_tgt is not None:
-			bias_adj = ( (2*(prev_tgt[0] - prev_src[0])) // 3 , (2*(prev_tgt[1] - prev_src[1])) // 3 )
+			last_diff = (prev_tgt[0] - prev_src[0], prev_tgt[1] - prev_src[1])
+			bias_adj = ( (2*last_diff[0]) // 3 , (2*last_diff[1]) // 3 )
 			bias_x = (bias[0] * 4 + bias_adj[0]) // 5
 			bias_y = (bias[1] * 4 + bias_adj[1]) // 5
 			bias = (bias_x, bias_y)
+
+			if abs(prev_tgt[0] - x_src) + abs(prev_tgt[1] - y_src) >= 6: 
+				print('zeroing bias because could not reach prev destination')
+				bias = (0,0)
+
 			state['bias'] = bias
 			print("bias: " + str(bias))
-		x_src,y_src = location_to_axis(game.leader.location)
+		
+		
 		state['src_loc'] = (x_src,y_src)
+		# if abs(last_diff[0]) + abs(last_diff[1]) >= 7:
+		# 	x,y = get_rand_location(game.leader, 5, last_diff)
 		x,y = get_rand_location(game.leader, 18, bias)
 		if x <= 0 or y <= 0:
 			#try smaller radius
