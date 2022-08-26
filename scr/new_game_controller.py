@@ -1375,7 +1375,7 @@ def create_scheme_go_random_map():
 	])
 	return cs
 
-def create_scheme_wander_around(count_max = 50):
+def create_scheme_wander_around(count_max_def = 50):
 	def gs_init(slot):
 		#type: (GoalSlot)->int
 		state = slot.get_scheme_state()
@@ -1383,6 +1383,8 @@ def create_scheme_wander_around(count_max = 50):
 		cur_map = get_current_map()
 		if cur_map in random_wander_amount:
 			count_max = random_wander_amount[cur_map]
+		else:
+			count_max = count_max_def
 		
 		state['wander_around'] = {
 			'tgt_loc': None,
