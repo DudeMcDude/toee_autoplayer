@@ -5,7 +5,7 @@ from controllers import ControlScheme, GoalState, GoalStateStart,GoalStateEnd, C
 
 from controller_callbacks_common import *
 from controller_scheme_builders import *
-from controller_navigation import map_connectivity, get_map_course, exterior_maps, worldmap_access_maps
+from controller_navigation import map_connectivity, get_map_course, exterior_maps, random_wander_amount
 from controller_constants import *
 
 from utilities import *
