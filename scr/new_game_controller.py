@@ -16,7 +16,7 @@ import gamedialog as dlg
 import logbook
 import debug
 
-PLAYTEST_EN  = True
+PLAYTEST_EN  = False
 SKIP_LOOTING = False
 START_NEW_GAME = False
 INITIAL_LOAD = ['Moathousing', 'Did some rounds', 'Fighting!']
@@ -812,6 +812,7 @@ def create_scheme_go_to_tile( loc ):
 		state['go_to_tile'] = {
 			'map':get_current_map(),
 			'try_count': 0,
+			'target_tile': location_to_axis(loc)
 			}
 		for n in range(len(game.party)):
 			pc = game.party[n]
@@ -822,8 +823,11 @@ def create_scheme_go_to_tile( loc ):
 	def gs_try_count_failsafe(slot):
 		# type: (GoalSlot)->int
 		state = slot.get_scheme_state()['go_to_tile']
-		if state['try_count'] >= 5:
-			print('create_scheme_go_to_tile: try count >= 5, aborting')
+		if state['try_count'] >= 3:
+			print('create_scheme_go_to_tile: try count >= 3, aborting. Destination was %s' % str(state['target_tile']) )
+			print('Party locations:')
+			for pc in game.party:
+				print(location_to_axis(pc.location))
 			return 0
 		state['try_count'] += 1
 		gs_select_all(slot)
@@ -946,11 +950,11 @@ def create_scheme_enter_building( loc, tgt_map_id = None ): #TODO
 			GoalStateCondition('check_tgt_map', check_tgt_map, ('select_all', 100), ('end', 100),),
 			
 			GoalState('select_all', gs_select_all, ('go_to_loc', 200), ),
-			GoalState('go_to_loc', gs_create_and_push_scheme, ('refresh_select_all', 200), params = {'param1': 'goto', 'param2': (create_scheme_go_to_tile, ( loc, ) ) }),
+			GoalState('go_to_loc', gs_create_and_push_scheme, ('refresh_select_all', 200), params = {'param1': 'enter_building_goto_tile', 'param2': (create_scheme_go_to_tile, ( loc, ) ) }),
 			
 			GoalState('refresh_select_all', gs_select_all, ('map_change_check', 100), ), # in case we get interrupted along the way
 			GoalState('map_change_check', gs_condition_map_change, ('end', 100), ('click_door_icon', 100) ),
-			GoalState('click_door_icon', gs_click_on_object, ('map_change_loop', 100), params={'param1': {'proto': MAP_TRANSFER_PROTOS, 'loc': loc} }),
+			GoalState('click_door_icon', gs_click_on_object, ('map_change_loop', 100), params={'param1': {'proto': MAP_TRANSFER_PROTOS, 'location': loc} }),
 			
 			GoalState('map_change_loop', gs_condition_map_change, ('end', 200), ('moving_check', 500) ),
 			GoalState('moving_check', is_moving_check, ('moving_check', 500), ('check_tgt_map', 100) ),
@@ -1700,7 +1704,7 @@ def create_loot_critter_scheme(obj):
 
 		GoalState('select_all', gs_select_all, ('center_on_target', 100)),
 		GoalState('center_on_target', gs_center_on_tile, ('check_loc_in_fog', 330), params={'param1': obj_loc}),
-		GoalState('check_loc_in_fog', gs_check_fogged, ('approach', 100), ('click_object', 100)),
+		GoalState('check_loc_in_fog', gs_check_fogged, ('approach', 100), ('click_object', 100)), # will set state['push_scheme'] to 'critter_loot_approach', create_scheme_go_to_tile
 		GoalState('approach', gs_create_and_push_scheme, ('click_object', 100), ),
 		GoalState('click_object', gs_click_on_object, ('wait_for_inventory_loop', 100), ('end', 100) ),
 
