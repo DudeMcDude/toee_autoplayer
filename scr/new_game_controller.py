@@ -16,7 +16,7 @@ import gamedialog as dlg
 import logbook
 import debug
 
-PLAYTEST_EN  = False
+PLAYTEST_EN  = True
 SKIP_LOOTING = False
 START_NEW_GAME = False
 INITIAL_LOAD = ['Moathousing', 'Did some rounds', 'Fighting!']
