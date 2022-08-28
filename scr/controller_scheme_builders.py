@@ -199,11 +199,9 @@ def create_scheme_scroll(wid_identifier, scroll_delta, times = 1):
 	'''
 	scroll_delta: 1 for scroll down, -1 for up
 	'''
-	wid_list = None
-	if type(wid_identifier) is list:
-		wid_list = wid_identifier
-	else:
-		wid_list = [wid_identifier,]
+	
+	
+	# wid_list = [wid_identifier,]
 	def gs_init(slot):
 		# type: (GoalSlot)->int
 		state = slot.get_scheme_state()
@@ -264,7 +262,7 @@ def create_scheme_scroll(wid_identifier, scroll_delta, times = 1):
 	cs = ControlScheme()
 	cs.__set_stages__([
 	  GoalStateStart(gs_init, ('move_mouse_to_widget', 100), ('end', 100) ),
-	  GoalState('move_mouse_to_widget',gs_move_mouse_to_widget, ('check_count', 100), params={'param1': wid_list[0]}),
+	  GoalState('move_mouse_to_widget',gs_move_mouse_to_widget, ('check_count', 100), params={'param1': wid_identifier}),
 	  GoalState('check_count', gs_check_count, ('scroll_it', 100), ('end', 100)),
 	  GoalState('scroll_it', lambda slot: game.mouse_scroll(-scroll_delta) or 1, ('check_count', 100), ),
 	  GoalStateEnd(gs_wait_cb, ('end', 100), ),

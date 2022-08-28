@@ -1960,7 +1960,7 @@ def create_memorize_clear():
 	  GoalState('press_widget', gs_press_widget, ('next_widget', 100), ),
 	  
 	  GoalState('scrollbar_is_end', lambda slot: slot.get_scheme_state()['scrollbar_wid'].scrollbar_value >= slot.get_scheme_state()['scrollbar_max'] , ('end',100), ('scroll_memo_down', 100) ),
-	  GoalState('scroll_memo_down', gs_create_and_push_scheme, ('next_widget', 100), params={'param1': 'memorize_scroll_up', 'param2': (create_scheme_scroll, (WID_IDEN.CHAR_SPELLS_UI_MEMORIZE_SPELL_WINDOWS[0], 1, 1) )} ),
+	  GoalState('scroll_memo_down', gs_create_and_push_scheme, ('next_widget', 100), params={'param1': 'memorize_scroll_up', 'param2': (create_scheme_scroll, (WID_IDEN.CHAR_SPELLS_UI_CLASS_MEMORIZE_SCROLLBAR, 1, 1) )} ),
 	  GoalStateEnd(gs_wait_cb, ('end', 100), ),
 	])
 	return cs
