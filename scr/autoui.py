@@ -15,6 +15,7 @@ class TWidget:
     is_legacy_widget = False
     is_window = False
     is_button = False
+    is_scrollbar = False
     wid = None #type: LgcyWidget | WidgetBase
     children_ids = None
     id = -1
@@ -32,13 +33,23 @@ class TWidget:
         self.name = wid.name
         self.is_window = wid.is_window
         self.is_button = wid.is_button
+        self.is_scrollbar = wid.is_scrollbar
         if self.is_window:
             self.children_ids = wid.children
         if self.is_button:
             self.wid = tpgui._get_legacy_button(id)
+        elif self.is_scrollbar:
+            self.wid = tpgui._get_legacy_scrollbar(id)
         return True
 
     def __init_from_advanced_widget__(self, id):
+        scrollbar = tpgui._get_adv_widget_scrollbar(id)
+        if scrollbar is not None:
+            self.wid = scrollbar
+            self.is_scrollbar = True
+            self.name = scrollbar.name
+            self.source_uri = scrollbar.source_uri
+            return True
         wnd = tpgui._get_adv_widget_container(id)
         if wnd is not None:
             self.wid = wnd
@@ -107,7 +118,14 @@ class TWidget:
             return ""
         return self.wid.rendered_text
         
-
+    @property
+    def scrollbar_value(self):
+        return self.wid.scrollbar_value
+    
+    @property
+    def scrollbar_max(self):
+        return self.wid.scrollbar_max
+    
     def __repr__(self):
         return "TWidget ({}, {})".format(self.id, self.full_name)
 

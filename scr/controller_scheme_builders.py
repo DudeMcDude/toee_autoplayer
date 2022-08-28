@@ -199,23 +199,48 @@ def create_scheme_scroll(wid_identifier, scroll_delta, times = 1):
 	'''
 	scroll_delta: 1 for scroll down, -1 for up
 	'''
-
+	wid_list = None
+	if type(wid_identifier) is list:
+		wid_list = wid_identifier
+	else:
+		wid_list = [wid_identifier,]
+	
 	def gs_check_count(slot):
 		# type: (GoalSlot)->int
 		state = slot.get_scheme_state()
 		if not 'widget_scrolling' in state:
 			state['widget_scrolling'] = {
 				'count': 0,
+				'text_contents': []
 			}
 		
 		if state['widget_scrolling']['count'] >= times:
 			return 0
 		state['widget_scrolling']['count'] += 1
+
+		text_contents = []
+		for idx in range(len(wid_list)):
+			state['widget_scrolling']['idx'] = idx
+			# print('scan_get_widget: idx %d' % idx)
+			try:
+				# print('trying to obtain widget: %s' % str(wid_list[idx]))
+				wid = controller_ui_util.obtain_widget(wid_list[idx])
+			except Exception as e:
+				wid = None
+				# print('Failed!')
+				print(str(e))
+				# print(str(e.__traceback__))
+
+			if wid is None:
+				# print('Wid is None!')
+				continue
+			text_contents.append(wid.rendered_text)
+
 		return 1
 
 	cs = ControlScheme()
 	cs.__set_stages__([
-	  GoalStateStart(gs_move_mouse_to_widget, ('check_count', 100), params={'param1': wid_identifier}),
+	  GoalStateStart(gs_move_mouse_to_widget, ('check_count', 100), params={'param1': wid_list[0]}),
 	  GoalState('check_count', gs_check_count, ('scroll_it', 100), ('end', 100)),
 	  GoalState('scroll_it', lambda slot: game.mouse_scroll(-scroll_delta) or 1, ('check_count', 100), ),
 	  GoalStateEnd(gs_wait_cb, ('end', 100), ),

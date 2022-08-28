@@ -16,7 +16,7 @@ import gamedialog as dlg
 import logbook
 import debug
 
-PLAYTEST_EN  = True
+PLAYTEST_EN  = False
 SKIP_LOOTING = False
 START_NEW_GAME = False
 INITIAL_LOAD = ['Moathousing', 'Did some rounds', 'Fighting!']
@@ -1953,7 +1953,6 @@ def create_memorize_clear():
 	  
 	  GoalState('scroll_memo_down', gs_create_and_push_scheme, ('scroll_known_up', 100), params={'param1': 'memorize_scroll_up', 'param2': (create_scheme_scroll, (WID_IDEN.CHAR_SPELLS_UI_MEMORIZE_SPELL_WINDOWS[0], 1, 1) )} ),
 		
-	  GoalState(),
 	  GoalStateEnd(gs_wait_cb, ('end', 100), ),
 	])
 	return cs
