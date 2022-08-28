@@ -16,7 +16,7 @@ import gamedialog as dlg
 import logbook
 import debug
 
-PLAYTEST_EN  = False
+PLAYTEST_EN  = True
 SKIP_LOOTING = False
 START_NEW_GAME = False
 INITIAL_LOAD = ['Moathousing', 'Did some rounds', 'Fighting!']
@@ -1920,6 +1920,8 @@ def create_memorize_spells_all():
 
 def create_memorize_clear():
 	wid_list = WID_IDEN.CHAR_SPELLS_UI_MEMORIZE_SPELL_WINDOWS
+	scrollbar_id = WID_IDEN.CHAR_SPELLS_UI_CLASS_MEMORIZE_SCROLLBAR
+
 	def gs_init(slot):
 		#type: (GoalSlot)->int
 		state = slot.get_scheme_state()
@@ -1927,6 +1929,11 @@ def create_memorize_clear():
 			'wid_id': wid_list[0],
 			'idx': -1
 		}
+		scrollbar_wid = obtain_widget(scrollbar_id)
+		if scrollbar_wid is None:
+			return 0
+		state['scrollbar_max'] = scrollbar_wid.scrollbar_max
+		state['scrollbar_wid'] = scrollbar_wid
 		return 1
 
 	def gs_next_widget(slot):
@@ -1946,13 +1953,14 @@ def create_memorize_clear():
 	cs = ControlScheme()
 	cs.__set_stages__([
 	  GoalStateStart(gs_init, ('scroll_memo_up', 100),('end', 100) ),
-	  GoalState('scroll_memo_up', gs_create_and_push_scheme, ('next_widget', 100), params={'param1': 'memorize_scroll_up', 'param2': (create_scheme_scroll, (WID_IDEN.CHAR_SPELLS_UI_MEMORIZE_SPELL_WINDOWS[0], -1, 16) )} ),
+	  # scroll to beginning
+	  GoalState('scroll_memo_up', gs_create_and_push_scheme, ('next_widget', 100), params={'param1': 'memorize_scroll_up', 'param2': (create_scheme_scroll, (WID_IDEN.CHAR_SPELLS_UI_CLASS_MEMORIZE_SCROLLBAR, -1, -1) )} ),
 	  
-	  GoalState('next_widget', gs_next_widget, ('press_widget', 100), ('scroll_memo_down', 100)),
+	  GoalState('next_widget', gs_next_widget, ('press_widget', 100), ('scrollbar_is_end', 100)),
 	  GoalState('press_widget', gs_press_widget, ('next_widget', 100), ),
 	  
-	  GoalState('scroll_memo_down', gs_create_and_push_scheme, ('scroll_known_up', 100), params={'param1': 'memorize_scroll_up', 'param2': (create_scheme_scroll, (WID_IDEN.CHAR_SPELLS_UI_MEMORIZE_SPELL_WINDOWS[0], 1, 1) )} ),
-		
+	  GoalState('scrollbar_is_end', lambda slot: slot.get_scheme_state()['scrollbar_wid'].scrollbar_value >= slot.get_scheme_state()['scrollbar_max'] , ('end',100), ('scroll_memo_down', 100) ),
+	  GoalState('scroll_memo_down', gs_create_and_push_scheme, ('next_widget', 100), params={'param1': 'memorize_scroll_up', 'param2': (create_scheme_scroll, (WID_IDEN.CHAR_SPELLS_UI_MEMORIZE_SPELL_WINDOWS[0], 1, 1) )} ),
 	  GoalStateEnd(gs_wait_cb, ('end', 100), ),
 	])
 	return cs
@@ -2106,9 +2114,8 @@ def create_memorize_spells(obj):
 	  	GoalState('init_spell_selection', gs_init_memorize_spells, ('clear_memo_up', 100),('end', 100) ),
 		
 		GoalState('clear_memo_up', gs_push_scheme, ('scroll_memo_up', 100), params={'param1': 'memorize_clear_all', } ),
-		GoalState('scroll_memo_up', gs_create_and_push_scheme, ('scroll_known_up', 100), params={'param1': 'memorize_scroll_up', 'param2': (create_scheme_scroll, (WID_IDEN.CHAR_SPELLS_UI_MEMORIZE_SPELL_WINDOWS[0], -1, 16) )} ),
-		
-		GoalState('scroll_known_up', gs_create_and_push_scheme, ('scan_memorization_slots', 100), params={'param1': 'known_scroll_up', 'param2': (create_scheme_scroll, (WID_IDEN.CHAR_SPELLS_UI_SPELLBOOK_SPELL_WINDOWS[0], -1, 16) )} ),
+		GoalState('scroll_memo_up', gs_create_and_push_scheme, ('scroll_known_up', 100), params={'param1': 'memorize_scroll_up', 'param2': (create_scheme_scroll, (WID_IDEN.CHAR_SPELLS_UI_CLASS_MEMORIZE_SCROLLBAR, -1, -1) )} ),
+		GoalState('scroll_known_up', gs_create_and_push_scheme, ('scan_memorization_slots', 100), params={'param1': 'known_scroll_up', 'param2': (create_scheme_scroll, (WID_IDEN.CHAR_SPELLS_UI_CLASS_SPELLBOOK_SCROLLBAR, -1, -1) )} ),
 		
 
 		GoalState('scan_memorization_slots', gs_scan_get_widget_from_list, ('check_memorization_slot', 100), ('end', 100), 

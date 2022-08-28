@@ -204,7 +204,16 @@ def create_scheme_scroll(wid_identifier, scroll_delta, times = 1):
 		wid_list = wid_identifier
 	else:
 		wid_list = [wid_identifier,]
-	
+	def gs_init(slot):
+		# type: (GoalSlot)->int
+		state = slot.get_scheme_state()
+		wid = obtain_widget(wid_identifier)
+		if wid.is_scrollbar:
+			state['scrollbar_wid'] = wid
+		else:
+			state['scrollbar_wid'] = None
+		return 1
+
 	def gs_check_count(slot):
 		# type: (GoalSlot)->int
 		state = slot.get_scheme_state()
@@ -214,10 +223,24 @@ def create_scheme_scroll(wid_identifier, scroll_delta, times = 1):
 				'text_contents': []
 			}
 		
-		if state['widget_scrolling']['count'] >= times:
-			return 0
-		state['widget_scrolling']['count'] += 1
+		if times > 0:
+			if state['widget_scrolling']['count'] >= times:
+				return 0
+			state['widget_scrolling']['count'] += 1
+			return 1
+		
+		scrollbar_wid = state['scrollbar_wid'] #type: aui.TWidget
+		if scrollbar_wid is not None:
+			if scroll_delta > 0: # scroll down
+				if scrollbar_wid.scrollbar_value < scrollbar_wid.scrollbar_max:
+					return 1
+				return 0
+			else: # scroll up
+				if scrollbar_wid.scrollbar_value > 0:
+					return 1
+				return 0
 
+		#TODO check contents
 		text_contents = []
 		for idx in range(len(wid_list)):
 			state['widget_scrolling']['idx'] = idx
@@ -240,7 +263,8 @@ def create_scheme_scroll(wid_identifier, scroll_delta, times = 1):
 
 	cs = ControlScheme()
 	cs.__set_stages__([
-	  GoalStateStart(gs_move_mouse_to_widget, ('check_count', 100), params={'param1': wid_list[0]}),
+	  GoalStateStart(gs_init, ('move_mouse_to_widget', 100), ('end', 100) ),
+	  GoalState('move_mouse_to_widget',gs_move_mouse_to_widget, ('check_count', 100), params={'param1': wid_list[0]}),
 	  GoalState('check_count', gs_check_count, ('scroll_it', 100), ('end', 100)),
 	  GoalState('scroll_it', lambda slot: game.mouse_scroll(-scroll_delta) or 1, ('check_count', 100), ),
 	  GoalStateEnd(gs_wait_cb, ('end', 100), ),

@@ -96,7 +96,10 @@ def obtain_widget(identifier_list, widget_ids = None):
     for wid_identifier in identifier_list:
         # print('wid_identifier: ' + str(wid_identifier) + ' widget_ids: ' + str(widget_ids))
         if type(wid_identifier) == int: # numbers are used to select from several widgets with identical identifiers (usually buttons/children)
-            res = find_res[wid_identifier]
+            idx = wid_identifier
+            if idx >= len(find_res):
+                return None
+            res = find_res[idx]
             # print('res: ' + str(res))
             find_res = [res,]
             continue
@@ -169,8 +172,12 @@ class WID_IDEN:
     CHAR_UI_MAIN_SELECT_SPELLS_BTN = [ ('char_ui_main_window',), ('char_ui_main_select_spells_button',)]
 
     CHAR_SPELLS_UI_SPELLBOOK_SPELL_WINDOWS = [ [ ('char_spells_ui_spellbook_spell_windows',), x] for x in range(0,18) ]
+    CHAR_SPELLS_UI_CLASS_SPELLBOOK_WINDOW =  [ ('char_spells_ui_class_spellbook_window',),]
+    CHAR_SPELLS_UI_CLASS_SPELLBOOK_SCROLLBAR =  [ ('char_spells_ui_class_spellbook_window',),None, 0]
+    
     CHAR_SPELLS_UI_MEMORIZE_SPELL_WINDOWS  = [ [ ('char_spells_ui_memorize_spell_windows',), x] for x in range(0,18) ]
-
+    CHAR_SPELLS_UI_CLASS_MEMORIZE_WINDOW =  [ ('char_spells_ui_class_memorize_window',),]
+    CHAR_SPELLS_UI_CLASS_MEMORIZE_SCROLLBAR =  [ ('char_spells_ui_class_memorize_window',),None, 0]
 
     CHAR_EDITOR_UI_CLASS_BTNS = [ ('char_editor_class_ui.c 193',), ('')]
 
