@@ -194,14 +194,31 @@ def create_ui_camp_rest_scheme():
 		[GoalState('end', gs_wait_cb, ('end', 100), ) ,	])
 	return cs
 
-def create_scheme_scroll(wid_identifier, scroll_delta):
+def create_scheme_scroll(wid_identifier, scroll_delta, times = 1):
+	#type: (aui.TWidgetIdentifier, int, int)->ControlScheme
 	'''
 	scroll_delta: 1 for scroll down, -1 for up
 	'''
+
+	def gs_check_count(slot):
+		# type: (GoalSlot)->int
+		state = slot.get_scheme_state()
+		if not 'widget_scrolling' in state:
+			state['widget_scrolling'] = {
+				'count': 0,
+			}
+		
+		if state['widget_scrolling']['count'] >= times:
+			return 0
+		state['widget_scrolling']['count'] += 1
+		return 1
+
 	cs = ControlScheme()
 	cs.__set_stages__([
-	  GoalStateStart(gs_move_mouse_to_widget, ('end', 100), params={'param1': wid_identifier}),
-	  GoalStateEnd(lambda slot: game.mouse_scroll(-scroll_delta) or 1, ('end', 100), ),
+	  GoalStateStart(gs_move_mouse_to_widget, ('check_count', 100), params={'param1': wid_identifier}),
+	  GoalState('check_count', gs_check_count, ('scroll_it', 100), ('end', 100)),
+	  GoalState('scroll_it', lambda slot: game.mouse_scroll(-scroll_delta) or 1, ('check_count', 100), ),
+	  GoalStateEnd(gs_wait_cb, ('end', 100), ),
 	])
 	return cs
 

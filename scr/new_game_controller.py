@@ -74,8 +74,8 @@ def gs_master(slot):
 			pt.add_scheme( create_hommlet_scheme1(), 'hommlet1' )
 			pt.push_scheme('hommlet1')
 			return 0
-		# pt.push_scheme('sell_loot')
-		# return 0
+		pt.push_scheme('memorize_spells')
+		return 0
 		
 		leader = game.leader
 
@@ -144,6 +144,9 @@ def setup_playtester(autoplayer):
 	autoplayer.add_scheme( create_true_neutral_scheme(), 'true_neutral_vig' )
 	autoplayer.add_scheme( create_hommlet_scheme0(), 'hommlet0')
 	autoplayer.add_scheme( create_ui_camp_rest_scheme(), 'ui_camp_rest' )
+	autoplayer.add_scheme( create_memorize_clear(), 'memorize_clear_all' )
+	autoplayer.add_scheme( create_memorize_spells_all(), 'memorize_spells' )
+
 	autoplayer.add_scheme( create_open_worldmap_ui(), 'open_worldmap')
 	autoplayer.add_scheme( create_rest_scheme(), 'rest' )
 	autoplayer.add_scheme( create_sell_loot(), 'sell_loot')
@@ -720,6 +723,8 @@ def gs_handle_dialogue(slot):
 def create_rest_scheme():
 	rest_map_IDs = {
 		AREA_ID_HOMMLET: HOMMLET_INN_MAIN_MAP,
+		AREA_ID_MOATHOUSE: MOATHOUSE_TOWER_MAP,
+		AREA_ID_TEMPLE: TEMPLE_SECRET_STAIRCASE,
 	}
 	def init_rest_scheme(slot):
 		#type: (GoalSlot)->int
@@ -757,9 +762,10 @@ def create_rest_scheme():
 	cs = ControlScheme()
 	cs.__set_stages__([
 		GoalStateStart( init_rest_scheme, ('check_map', 100),('end', 100)  ),
-		GoalState('check_map', gs_condition, ('start_resting', 100), ('go_building', 100), params={'param1': check_map} ),
+		GoalState('check_map', gs_condition, ('memorize_spells', 100), ('go_building', 100), params={'param1': check_map} ),
 		
-		GoalState('go_building', gs_create_and_push_scheme, ('start_resting', 500),('end', 100)  ),
+		GoalState('go_building', gs_create_and_push_scheme, ('memorize_spells', 500),('end', 100)  ),
+		GoalState('memorize_spells', gs_push_scheme, ('start_resting', 100), params = {'param1': 'memorize_spells' }),
 		GoalState('start_resting', gs_push_scheme, ('end', 500),  params={'param1': 'ui_camp_rest',  } ),
 		
 		GoalState('end', gs_wait_cb, ('end', 100),  ),
@@ -1875,8 +1881,134 @@ def create_open_char_ui(obj):
 	])
 	return cs
 
+def create_memorize_spells_all():
+	def gs_init(slot):
+		#type: (GoalSlot)->int
+		state = slot.get_scheme_state()
+		state['memorize'] = {
+			'spellcasters_queue': [pc for pc in game.party if len(pc.spells_known) > 0],
+		}
+		if len(state['memorize']['spellcasters_queue']) == 0:
+			return 0
+		return 1
+	
+	def gs_set_memorizer(slot):
+		# type: (GoalSlot)->int
+		state = slot.get_scheme_state()
+		if len(state['memorize']['spellcasters_queue']) == 0:
+			return 0
+		queue = state['memorize']['spellcasters_queue'] # type: list[PyObjHandle]
+		caster = queue.pop()
+		state['push_scheme'] = {
+			'id': 'obj_memorize_spells',
+			'callback': (create_memorize_spells, (caster,) )
+		}
+		return 1
+
+	cs = ControlScheme()
+	cs.__set_stages__([
+	  GoalStateStart(gs_init, ('set_party', 100),('is_char_ui_visible', 100) ),
+	  GoalState('set_party',gs_set_memorizer, ('do_memorize', 100), ('is_char_ui_visible', 100) ),
+	  GoalState('do_memorize', gs_create_and_push_scheme, ('set_party', 100), ),
+	 
+	  GoalState('is_char_ui_visible', gs_is_widget_visible, ('exit_char_ui', 100), ('end', 100), params={'param1': WID_IDEN.CHAR_UI_MAIN_EXIT} ), 
+	  GoalState('exit_char_ui', gs_press_widget, ('end', 100), params={'param1': WID_IDEN.CHAR_UI_MAIN_EXIT} ),
+	  
+	  GoalStateEnd(gs_wait_cb, ('end', 100), ),
+	])
+	return cs
+
+def create_memorize_clear():
+	wid_list = WID_IDEN.CHAR_SPELLS_UI_MEMORIZE_SPELL_WINDOWS
+	def gs_init(slot):
+		#type: (GoalSlot)->int
+		state = slot.get_scheme_state()
+		state['widget_scan'] = {
+			'wid_id': wid_list[0],
+			'idx': -1
+		}
+		return 1
+
+	def gs_next_widget(slot):
+		# type: (GoalSlot)->int
+		state = slot.get_scheme_state()
+		idx = state['widget_scan']['idx']
+		idx += 1
+		if idx >= len(wid_list):
+			return 0
+		wid_id = wid_list[idx]
+		if obtain_widget(wid_id) is None:
+			return 0
+		state['widget_scan']['wid_id'] = wid_id
+		state['widget_scan']['idx'] = idx
+		return 1
+
+	cs = ControlScheme()
+	cs.__set_stages__([
+	  GoalStateStart(gs_init, ('scroll_memo_up', 100),('end', 100) ),
+	  GoalState('scroll_memo_up', gs_create_and_push_scheme, ('next_widget', 100), params={'param1': 'memorize_scroll_up', 'param2': (create_scheme_scroll, (WID_IDEN.CHAR_SPELLS_UI_MEMORIZE_SPELL_WINDOWS[0], -1, 16) )} ),
+	  
+	  GoalState('next_widget', gs_next_widget, ('press_widget', 100), ('scroll_memo_down', 100)),
+	  GoalState('press_widget', gs_press_widget, ('next_widget', 100), ),
+	  
+	  GoalState('scroll_memo_down', gs_create_and_push_scheme, ('scroll_known_up', 100), params={'param1': 'memorize_scroll_up', 'param2': (create_scheme_scroll, (WID_IDEN.CHAR_SPELLS_UI_MEMORIZE_SPELL_WINDOWS[0], 1, 1) )} ),
+		
+	  GoalState(),
+	  GoalStateEnd(gs_wait_cb, ('end', 100), ),
+	])
+	return cs
+
+class SpellClassifier:
+	buff_spells = [spell_shield, spell_shield_of_faith, spell_bless, spell_protection_from_evil, spell_enlarge,
+	 spell_aid, spell_endurance, spell_bulls_strength,
+	 spell_prayer,spell_haste, spell_false_life,
+	 ]
+	self_buff_spells = [spell_mage_armor, 
+	spell_magic_circle_against_evil,
+	spell_righteous_might
+	]
+	
+	animal_companion_spells = [spell_magic_fang, spell_greater_magic_fang]
+	elemental_protection_spells = [spell_resist_elements, spell_endure_elements, spell_protection_from_elements]
+	
+	offensive_spells = [
+		spell_magic_missile, spell_burning_hands, spell_magic_stone, spell_produce_flame, 
+		spell_searing_light, spell_sound_burst,
+		spell_fireball, spell_call_lightning,
+		spell_cone_of_cold,
+		spell_flame_strike,
+	]
+	cc_spells = [spell_command,spell_cause_fear, spell_grease, spell_entangle, spell_color_spray,
+	spell_web, spell_glitterdust, spell_hold_person,
+	]
+	
+	summon_spells = [spell_summon_monster_i, spell_summon_monster_ii, ]
+	utility_spells = [spell_read_magic, spell_guidance, spell_virtue,
+	spell_knock,]
+	def __init__(self):
+		pass
+	@staticmethod
+	def categorize_spells(known):
+		#type: (tuple[PySpellStore])-> dict[str,list[PySpellStore]]
+		relevant_spells = {'offensive': [], 'buff': [], 'self_buff': [], 'cc': [], 'util': []} #type: dict[str, list[PySpellStore] ]
+		
+		for sp in known:
+			sp_enum = sp.spell_enum
+			if sp_enum in SpellClassifier.offensive_spells:
+				relevant_spells['offensive'].append(sp)
+			elif sp_enum in SpellClassifier.buff_spells:
+				relevant_spells['buff'].append(sp)
+			elif sp_enum in SpellClassifier.self_buff_spells:
+				relevant_spells['self_buff'].append(sp)
+			elif sp_enum in SpellClassifier.cc_spells:
+				relevant_spells['cc'].append(sp)
+			elif sp_enum in SpellClassifier.utility_spells:
+				relevant_spells['util'].append(sp)
+		return relevant_spells
+
 def create_memorize_spells(obj):
 	#type: (PyObjHandle)->ControlScheme
+	
 	def gs_init_memorize_spells(slot):
 		#type: (GoalSlot)->int
 		print('gs_init_memorize_spells')
@@ -1891,17 +2023,13 @@ def create_memorize_spells(obj):
 		}
 		return 1
 
-	def gs_select_known_spell(slot):
-		# type: (GoalSlot)->int
-		return 1
-
 	def memoslot_check(slot):
 		#type: (GoalSlot)->int
 		state = slot.get_scheme_state()
 		idx = state['widget_scan']['idx']
 		wid_list = slot.param1
 		wid_id = wid_list[idx]
-		print('checking widget:', wid_id)
+		# print('checking widget:', wid_id)
 		wid = controller_ui_util.obtain_widget(wid_id)
 		if wid is None:
 			# print('not found')
@@ -1926,6 +2054,47 @@ def create_memorize_spells(obj):
 		if memo_wid:
 			return 1
 		return 0
+	
+	def gs_set_widget_scan_to_memo_spell_slot(slot):
+		# type: (GoalSlot)->int
+		state = slot.get_scheme_state()
+		state['widget_scan'] = state['memorize_spells']['memo_wid']
+		return 1
+
+	def gs_select_known_spell(slot):
+		# type: (GoalSlot)->int
+		state = slot.get_scheme_state()
+		spell_level = state['memorize_spells']['spell_level']
+		known = state['memorize_spells']['known'] #type: tuple[PySpellStore]
+		relevant_spells = SpellClassifier.categorize_spells( (sp for sp in known if sp.spell_level == spell_level) )
+		keys = [k for k in relevant_spells.keys() if len(relevant_spells[k]) > 0 ]
+		if len(keys) == 0:
+			return 0
+		cat_idx = game.random_range(0, len(keys)-1 )
+		spells = relevant_spells[keys[cat_idx]]
+		chosen_spell_idx = game.random_range(0, len(spells) - 1)
+		chosen_spell = spells[chosen_spell_idx]
+		state['memorize_spells']['known_select'] = chosen_spell.spell_name
+		return 1
+
+	def known_slot_check(slot):
+		state = slot.get_scheme_state()
+		idx = state['widget_scan']['idx']
+		wid_list = slot.param1
+		wid_id = wid_list[idx]
+		# print('checking widget:', wid_id)
+		wid = controller_ui_util.obtain_widget(wid_id)
+		if wid is None:
+			# print('not found')
+			return False
+		if not wid.is_button_enabled:
+			# print('button not enabled')
+			return False
+		print('obtained widget: %s'%str(wid))
+		print('rendered text: ', wid.rendered_text)
+		if wid.rendered_text.lower() == state['memorize_spells']['known_select'].lower():
+			return True
+		return False
 
 	cs = ControlScheme()
 	cs.__set_stages__([
@@ -1935,19 +2104,28 @@ def create_memorize_spells(obj):
 		GoalState('open_spells_ui', gs_press_widget, ('check_memorized_slots', 100), params={'param1': WID_IDEN.CHAR_UI_MAIN_SELECT_SPELLS_BTN}),
 		GoalState('check_memorized_slots', gs_is_widget_visible, ('init_spell_selection', 100), ('end', 100), params={'param1': WID_IDEN.CHAR_SPELLS_UI_MEMORIZE_SPELL_WINDOWS[0]}),
 		
-	  	GoalState('init_spell_selection', gs_init_memorize_spells, ('scan_memorization_slots', 100),('end', 100) ),
+	  	GoalState('init_spell_selection', gs_init_memorize_spells, ('clear_memo_up', 100),('end', 100) ),
 		
-		GoalState('scan_memorization_slots', gs_scan_get_widget_from_list, ('check_memorization_slot', 100), ('end', 100), params={'param1':  WID_IDEN.CHAR_SPELLS_UI_MEMORIZE_SPELL_WINDOWS, 'param2': memoslot_check } ),
+		GoalState('clear_memo_up', gs_push_scheme, ('scroll_memo_up', 100), params={'param1': 'memorize_clear_all', } ),
+		GoalState('scroll_memo_up', gs_create_and_push_scheme, ('scroll_known_up', 100), params={'param1': 'memorize_scroll_up', 'param2': (create_scheme_scroll, (WID_IDEN.CHAR_SPELLS_UI_MEMORIZE_SPELL_WINDOWS[0], -1, 16) )} ),
+		
+		GoalState('scroll_known_up', gs_create_and_push_scheme, ('scan_memorization_slots', 100), params={'param1': 'known_scroll_up', 'param2': (create_scheme_scroll, (WID_IDEN.CHAR_SPELLS_UI_SPELLBOOK_SPELL_WINDOWS[0], -1, 16) )} ),
+		
+
+		GoalState('scan_memorization_slots', gs_scan_get_widget_from_list, ('check_memorization_slot', 100), ('end', 100), 
+			params={'param1':  WID_IDEN.CHAR_SPELLS_UI_MEMORIZE_SPELL_WINDOWS, 'param2': memoslot_check } ),
 		GoalState('check_memorization_slot', gs_select_memorized_spell_slot, ('select_spell_known', 100), ('end', 100) ),
 
 		GoalState('select_spell_known', gs_select_known_spell, ('select_spell_known', 100), ('', 100) ),
+		GoalState('scan_known_slots', gs_scan_get_widget_from_list, ('move_mouse', 100), ('end', 100), 
+			params={'param1':  WID_IDEN.CHAR_SPELLS_UI_SPELLBOOK_SPELL_WINDOWS, 'param2': known_slot_check } ),
 		
 
 		GoalState('move_mouse', gs_move_mouse_to_widget, ('mouse_down', 330), ('end', 100), ),
-		GoalState('mouse_down', gs_lmb_down, ('select_container_item_slot', 100),  ),
-		GoalState('select_container_item_slot', gs_select_container_item_slot, ('move_mouse_to_container', 200), ),
-		GoalState('move_mouse_to_container', gs_move_mouse_to_widget, ('mouse_up', 330), ('end', 100), ),
-		GoalState('mouse_up', gs_lmb_up, ('is_transfer_slider_active', 100),  ),
+		GoalState('mouse_down', gs_lmb_down, ('set_widget_scan_to_memo_spell_slot', 100),  ),
+		GoalState('set_widget_scan_to_memo_spell_slot', gs_set_widget_scan_to_memo_spell_slot, ('move_mouse_to_memo_slot', 100), ),
+		GoalState('move_mouse_to_memo_slot', gs_move_mouse_to_widget, ('mouse_up', 330), ('end', 100), ),
+		GoalState('mouse_up', gs_lmb_up, ('scan_memorization_slots', 100),  ),
 
 	  GoalStateEnd(gs_wait_cb, ('end', 100), ),
 	])
