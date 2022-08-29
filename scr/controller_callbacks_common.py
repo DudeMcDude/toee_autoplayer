@@ -467,7 +467,7 @@ def gs_click_on_object(slot):
 		}
 		from controller_scheme_builders import create_move_mouse_to_obj
 		cs = create_move_mouse_to_obj(obj_ref)
-		if playtester_push_scheme(cs, 'move_mouse_to_obj'):
+		if playtester_push_scheme(cs, 'gs_click_on_object__move_mouse_to_obj'):
 			return 1
 		# print("coudn't activate scheme " + str(slot.param1))
 		return 0
