@@ -44,7 +44,8 @@ def gs_master(slot):
 			'counter': 0,
 			'rest_needed': False,
 			'sell_loot_needed': False,
-			'try_go_outside_counter': 0
+			'try_go_outside_counter': 0,
+			'needs_memorize': True,
 		}
 		
 	else:
@@ -74,8 +75,11 @@ def gs_master(slot):
 			pt.add_scheme( create_hommlet_scheme1(), 'hommlet1' )
 			pt.push_scheme('hommlet1')
 			return 0
-		pt.push_scheme('memorize_spells')
-		return 0
+		
+		if slot.state['needs_memorize']:
+			slot.state['needs_memorize'] = False
+			pt.push_scheme('memorize_spells')
+			return 0
 		
 		leader = game.leader
 

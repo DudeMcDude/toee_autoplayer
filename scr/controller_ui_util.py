@@ -94,13 +94,13 @@ def obtain_widget(identifier_list, widget_ids = None):
         return res if res.visible else None
 
     for wid_identifier in identifier_list:
-        print('wid_identifier: ' + str(wid_identifier) + ' widget_ids: ' + str(widget_ids))
+        # print('wid_identifier: ' + str(wid_identifier) + ' widget_ids: ' + str(widget_ids))
         if type(wid_identifier) == int: # numbers are used to select from several widgets with identical identifiers (usually buttons/children)
             idx = wid_identifier
             if idx >= len(find_res):
                 return None
             res = find_res[idx]
-            print('res: ' + str(res))
+            # print('res: ' + str(res))
             find_res = [res,]
             continue
         elif len(find_res) > 1:
@@ -110,7 +110,7 @@ def obtain_widget(identifier_list, widget_ids = None):
             widget_ids = res.children_ids # search among last widget's children
         
         find_res = aui.find_by_identifier( wid_identifier, widget_ids )
-        print('find_res: ' + str(find_res))
+        # print('find_res: ' + str(find_res))
         if len(find_res) == 0:
             # print('not found')
             return None
