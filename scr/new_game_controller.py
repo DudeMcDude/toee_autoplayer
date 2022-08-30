@@ -1958,13 +1958,13 @@ def create_memorize_clear():
 	cs.__set_stages__([
 	  GoalStateStart(gs_init, ('scroll_memo_up', 100),('end', 100) ),
 	  # scroll to beginning
-	  GoalState('scroll_memo_up', gs_create_and_push_scheme, ('next_widget', 100), params={'param1': 'memorize_scroll_up', 'param2': (create_scheme_scroll, (WID_IDEN.CHAR_SPELLS_UI_CLASS_MEMORIZE_SCROLLBAR, -1, -1) )} ),
+	  GoalState('scroll_memo_up', gs_create_and_push_scheme, ('next_widget', 100), params={'param1': 'memorize_clear__scroll_to_top', 'param2': (create_scheme_scroll, (WID_IDEN.CHAR_SPELLS_UI_CLASS_MEMORIZE_SCROLLBAR, -1, -1) )} ),
 	  
 	  GoalState('next_widget', gs_next_widget, ('press_widget', 100), ('scrollbar_is_end', 100)),
 	  GoalState('press_widget', gs_press_widget, ('next_widget', 100), ),
 	  
 	  GoalState('scrollbar_is_end', lambda slot: slot.get_scheme_state()['scrollbar_wid'].scrollbar_value >= slot.get_scheme_state()['scrollbar_max'] , ('end',100), ('scroll_memo_down', 100) ),
-	  GoalState('scroll_memo_down', gs_create_and_push_scheme, ('next_widget', 100), params={'param1': 'memorize_scroll_up', 'param2': (create_scheme_scroll, (WID_IDEN.CHAR_SPELLS_UI_CLASS_MEMORIZE_SCROLLBAR, 1, 1) )} ),
+	  GoalState('scroll_memo_down', gs_create_and_push_scheme, ('next_widget', 100), params={'param1': 'memorize_clear__scroll_down_once', 'param2': (create_scheme_scroll, (WID_IDEN.CHAR_SPELLS_UI_CLASS_MEMORIZE_SCROLLBAR, 1, 1) )} ),
 	  GoalStateEnd(gs_wait_cb, ('end', 100), ),
 	])
 	return cs
@@ -2043,18 +2043,19 @@ def create_memorize_spells(obj):
 		# print('checking widget:', wid_id)
 		wid = controller_ui_util.obtain_widget(wid_id)
 		if wid is None:
-			# print('not found')
+			print('memoslot_check: widget ID %s not found' % (wid_id))
 			return False
-		if not wid.is_button_enabled:
-			# print('button not enabled')
-			return False
+
 		print('obtained widget: %s'%str(wid))
 		print('rendered text: ', wid.rendered_text)
 		if wid.rendered_text == '':
+			print('create_memorize_spells::memoslot_check: found an empty spell slot')
 			return True
 
 		if wid.rendered_text[-1] in [str(x) for x in range(0,10)]:
-			state['memorize_spells']['spell_level'] = int(wid.rendered_text[-1])
+			spell_level = int(wid.rendered_text[-1])
+			print('create_memorize_spells: Setting spell level to: %d' % spell_level)
+			state['memorize_spells']['spell_level'] = spell_level
 		return False
 
 	def gs_select_memorized_spell_slot(slot):
@@ -2069,7 +2070,7 @@ def create_memorize_spells(obj):
 	def gs_set_widget_scan_to_memo_spell_slot(slot):
 		# type: (GoalSlot)->int
 		state = slot.get_scheme_state()
-		state['widget_scan'] = state['memorize_spells']['memo_wid']
+		state['widget_scan']['wid_id'] = state['memorize_spells']['memo_wid']
 		return 1
 
 	def gs_select_known_spell(slot):
@@ -2086,6 +2087,8 @@ def create_memorize_spells(obj):
 		chosen_spell_idx = game.random_range(0, len(spells) - 1)
 		chosen_spell = spells[chosen_spell_idx]
 		state['memorize_spells']['known_select'] = chosen_spell.spell_name
+
+		print('gs_select_known_spell: chosen spell %s' % chosen_spell.spell_name)
 		return 1
 
 	def known_slot_check(slot):
@@ -2098,12 +2101,10 @@ def create_memorize_spells(obj):
 		if wid is None:
 			# print('not found')
 			return False
-		if not wid.is_button_enabled:
-			# print('button not enabled')
-			return False
+		
 		print('obtained widget: %s'%str(wid))
 		print('rendered text: ', wid.rendered_text)
-		if wid.rendered_text.lower() == state['memorize_spells']['known_select'].lower():
+		if wid.rendered_text.lower().endswith(state['memorize_spells']['known_select'].lower()):
 			return True
 		return False
 
@@ -2117,16 +2118,18 @@ def create_memorize_spells(obj):
 		
 	  	GoalState('init_spell_selection', gs_init_memorize_spells, ('clear_memo_up', 100),('end', 100) ),
 		
-		GoalState('clear_memo_up', gs_push_scheme, ('scroll_memo_up', 100), params={'param1': 'memorize_clear_all', } ),
-		GoalState('scroll_memo_up', gs_create_and_push_scheme, ('scroll_known_up', 100), params={'param1': 'memorize_scroll_up', 'param2': (create_scheme_scroll, (WID_IDEN.CHAR_SPELLS_UI_CLASS_MEMORIZE_SCROLLBAR, -1, -1) )} ),
-		GoalState('scroll_known_up', gs_create_and_push_scheme, ('scan_memorization_slots', 100), params={'param1': 'known_scroll_up', 'param2': (create_scheme_scroll, (WID_IDEN.CHAR_SPELLS_UI_CLASS_SPELLBOOK_SCROLLBAR, -1, -1) )} ),
+		GoalState('clear_memo_up', gs_push_scheme, ('scroll_memo_to_top', 100), params={'param1': 'memorize_clear_all', } ),
+		GoalState('scroll_memo_to_top', gs_create_and_push_scheme, ('scroll_known_to_top', 100), params={'param1': 'memorize_scroll_to_top', 'param2': (create_scheme_scroll, (WID_IDEN.CHAR_SPELLS_UI_CLASS_MEMORIZE_SCROLLBAR, -1, -1) )} ),
+		GoalState('scroll_known_to_top', gs_create_and_push_scheme, ('scan_memorization_slots', 100), params={'param1': 'known_scroll_to_top', 'param2': (create_scheme_scroll, (WID_IDEN.CHAR_SPELLS_UI_CLASS_SPELLBOOK_SCROLLBAR, -1, -1) )} ),
 		
 
 		GoalState('scan_memorization_slots', gs_scan_get_widget_from_list, ('check_memorization_slot', 100), ('end', 100), 
 			params={'param1':  WID_IDEN.CHAR_SPELLS_UI_MEMORIZE_SPELL_WINDOWS, 'param2': memoslot_check } ),
 		GoalState('check_memorization_slot', gs_select_memorized_spell_slot, ('select_spell_known', 100), ('end', 100) ),
 
-		GoalState('select_spell_known', gs_select_known_spell, ('select_spell_known', 100), ('', 100) ),
+		GoalState('select_spell_known', gs_select_known_spell, ('scan_known_slots', 100), ('TODO', 100) ),
+		GoalState('TODO', lambda slot: 1, ('end', 100)),
+
 		GoalState('scan_known_slots', gs_scan_get_widget_from_list, ('move_mouse', 100), ('end', 100), 
 			params={'param1':  WID_IDEN.CHAR_SPELLS_UI_SPELLBOOK_SPELL_WINDOWS, 'param2': known_slot_check } ),
 		
