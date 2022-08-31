@@ -119,6 +119,12 @@ class TWidget:
         return self.wid.rendered_text
         
     @property
+    def render_status(self):
+        if not self.is_legacy_widget:
+            return 0
+        return self.wid.render_status
+
+    @property
     def scrollbar_value(self):
         return self.wid.scrollbar_value
     
