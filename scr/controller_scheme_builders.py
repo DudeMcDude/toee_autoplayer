@@ -3,7 +3,7 @@ from toee import PySpellStore, game
 from controller_callbacks_common import *
 from controllers import ControlScheme, GoalState, GoalStateStart,GoalStateEnd, ControllerBase, GoalStateCondition, GoalStateCreatePushScheme
 from controller_ui_util import WID_IDEN
-from controller_navigation import map_connectivity, get_map_course
+from controller_navigation import map_connectivity, get_map_course, random_wander_amount
 from controller_constants import *
 from utilities import *
 import controller_ui_util
@@ -269,13 +269,255 @@ def create_scheme_scroll(wid_identifier, scroll_delta, times = 1):
 	])
 	return cs
 
-def create_move_mouse_to_obj(obj_ref):
+
+def create_move_mouse_to_vacant_pos(loc):
+	def gs_init(slot):
+		#type: (GoalSlot)->int
+		state = slot.get_scheme_state()
+		state['mouse_move'] = {
+			'tweak_x': 0,
+			'tweak_y': 0,
+			'tweak_amount': 10,
+			'tweak_max': 30, # pixels
+			'use_fine': False,
+		}
+		if game.hovered == OBJ_HANDLE_NULL:
+			return 0
+		
+		return 1
+	def gs_move_mouse(slot):
+		# type: (GoalSlot)->int
+		state = slot.get_scheme_state()['mouse_move']
+		off_x = state['tweak_x']
+		off_y = state['tweak_y']
+		controller_ui_util.move_mouse_to_loc(loc, off_x, off_y)
+		return 1
 	cs = ControlScheme()
+	cs.__set_stages__([
+	  GoalStateStart(gs_init, ('check_hovered', 100),('end', 100) ),
+	  GoalState('move_mouse', gs_move_mouse, ('check_hovered', 100),),
+	  GoalStateCondition('check_hovered', lambda slot: game.hovered == OBJ_HANDLE_NULL, ('end', 10), ('tweak', 10) ),
+	  GoalState('tweak', gs_tweak_mouse_pos, ('move_mouse', 10), ('end', 10) ),	
+	  GoalStateEnd(gs_wait_cb, ('end', 100), ),
+	])
+	return cs
+
+def create_scheme_go_to_tile( loc, pc = None, DIST_THRESHOLD = 15 ):
+	'''loc: PyLong or tuple '''
+	if type(loc) is tuple:
+		loc = location_from_axis( *loc )
+	cs = ControlScheme()
+
+	def get_group():
+		if pc is None:
+			group = game.party
+		else:
+			group = [pc,]
+		return group
+
+	def gs_go_to_tile_init(slot):
+		# type: (GoalSlot)->int
+		state = slot.get_scheme_state()
+		state['go_to_tile'] = {
+			'map':get_current_map(),
+			'try_count': 0,
+			'target_tile': location_to_axis(loc)
+			}
+		
+		group = get_group()
+		if all([x.is_unconscious() for x in group]):
+			print('create_scheme_go_to_tile: cannot do, group %s are all unconscious' % str(group))
+			return 0
+		
+		for n in range(len(group)):
+			pc = group[n]
+			state['go_to_tile']['pc%d' % n] = pc.location
+			state['go_to_tile']['pc%d_rot' % n] = pc.rotation
+		return 1
+
+	def gs_try_count_failsafe(slot):
+		# type: (GoalSlot)->int
+		state = slot.get_scheme_state()['go_to_tile']
+		if state['try_count'] >= 3:
+			print('create_scheme_go_to_tile: try count >= 3, aborting. Destination was %s' % str(state['target_tile']) )
+			print('Party locations:')
+			
+			group = get_group()
+			for pc in group:
+				print(location_to_axis(pc.location))
+			return 0
+		state['try_count'] += 1
+		
+		if pc is None:
+			gs_select_all(slot)
+		else:
+			idx = get_party_idx(pc)
+			select_party(idx)
+		return 1
+
+	def arrived_at_check(slot):
+		#type: (GoalSlot)->int
+		state = slot.get_scheme_state()
+		
+		# failsafe mechanism
+		is_toggling_selection = False
+		selected = game.selected
+		if not 'selected_count' in state:
+			state['selected_count'] = len(selected)
+		else:
+			if state['selected_count'] != len(selected):
+				is_toggling_selection = True
+		
+		not_all_near = False
+		group = get_group()
+		for pc_ in group:
+			if pc_.is_unconscious():
+				continue
+			if pc_.distance_to(loc) > DIST_THRESHOLD:
+				not_all_near = True
+		if is_toggling_selection:
+			return 1
+		if not_all_near:
+			return 0
+
+		return 1
+	
+	cs.__set_stages__([
+		GoalStateStart( gs_go_to_tile_init, ('is_inventory_open', 100), ),
+
+		GoalState('is_inventory_open', gs_is_widget_visible, ('close_inventory', 100), ('select_all', 100), params={'param1': WID_IDEN.CHAR_UI_MAIN_EXIT}),
+		GoalState('close_inventory', gs_press_widget, ('select_all', 100), params={'param1': WID_IDEN.CHAR_UI_MAIN_EXIT}),
+
+
+		GoalState('select_all', gs_try_count_failsafe, ('check_loc', 100),('end', 100) ),
+		GoalStateCondition('check_loc', arrived_at_check, ('just_scroll', 100), ('scroll_and_click', 100), ),
+		GoalState('just_scroll', gs_center_on_tile, ('end', 700), params = {'param1': loc }),
+		
+		GoalState('scroll_and_click', gs_scroll_to_tile_and_click, ('is_moving_loop', 700), params = {'param1': loc }),
+		# GoalState('arrived_at', gs_condition, ('end', 0)        , ('is_moving_loop', 100), params={'param1': arrived_at_check}),
+		GoalStateCondition('is_moving_loop' , is_moving_check, ('is_moving_loop', 800), ('check_arrived', 100), ),
+		GoalStateCondition('check_arrived', arrived_at_check, ('end', 0), ('select_all', 100), ),
+		
+		GoalState('end', gs_wait_cb, ('end', 10), ),
+	])
+	return cs
+
+def create_scheme_wander_around(count_max_def = 50, pc = None):
+	import debug
+	def gs_init(slot):
+		#type: (GoalSlot)->int
+		state = slot.get_scheme_state()
+
+		cur_map = get_current_map()
+		if cur_map in random_wander_amount:
+			count_max = random_wander_amount[cur_map]
+		else:
+			count_max = count_max_def
+		
+		state['wander_around'] = {
+			'tgt_loc': None,
+			'src_loc': None,
+			'bias': (0,0),
+			'count': 0,
+			'count_max': count_max,
+		}
+		state['push_scheme'] = {
+			'id': 'wander_goto_tile',
+			'callback': (create_scheme_go_to_tile, ((0,0), pc) )
+		}
+		return 1
+
+	def get_rand_location(obj, distance = 10, bias = (0,0)):
+		x_src,y_src = location_to_axis(obj.location)
+		for _ in range(100):
+			x = x_src + bias[0] + game.random_range(-distance, distance)
+			y = y_src + bias[1] + game.random_range(-distance, distance)
+			# x,y = location_to_axis(game.target_random_tile_near_get( obj, distance) )
+			if ( abs(x-x_src) + abs(y - y_src) ) < distance / 2:
+				continue
+			import debug
+			result = debug.pathto(obj, x,y)
+			if result > 0:
+			# if x != 0 and y != 0:
+				return x,y
+		return 0,0
+	def gs_configure_wander(slot):
+		# type: (GoalSlot)->int
+		leader = game.leader if (pc is None) else pc
+		print('gs_configure_wander: leader = %s' % str(leader))
+		slot_state = slot.get_scheme_state()
+		
+		state = slot_state['wander_around']
+		if state['count'] >= state['count_max']:
+			return 0
+		if group_percent_hp(leader) < 66: # go rest if low on HP (or high casualties!)
+			return 0
+		state['count'] += 1
+		prev_src = state['src_loc']
+		prev_tgt = state['tgt_loc']
+		bias = state['bias']
+		x_src,y_src = location_to_axis(leader.location)
+		last_diff = (0,0)
+
+		if prev_src is not None and prev_tgt is not None:
+			last_diff = (prev_tgt[0] - prev_src[0], prev_tgt[1] - prev_src[1])
+			bias_adj = ( (2*last_diff[0]) // 3 , (2*last_diff[1]) // 3 )
+			bias_x = (bias[0] * 4 + bias_adj[0]) // 5
+			bias_y = (bias[1] * 4 + bias_adj[1]) // 5
+			bias = (bias_x, bias_y)
+
+			if abs(prev_tgt[0] - x_src) + abs(prev_tgt[1] - y_src) >= 6: 
+				print('zeroing bias because could not reach prev destination')
+				bias = (0,0)
+
+			state['bias'] = bias
+			print("bias: " + str(bias))
+		
+		
+		state['src_loc'] = (x_src,y_src)
+		# if abs(last_diff[0]) + abs(last_diff[1]) >= 7:
+		# 	x,y = get_rand_location(leader, 5, last_diff)
+		x,y = get_rand_location(leader, 18, bias)
+		if x <= 0 or y <= 0:
+			#try smaller radius
+			x,y = get_rand_location(leader, 10)
+			if x <= 0 or y <= 0:
+				return 0
+		tgt_loc = (x,y)
+		state['tgt_loc'] = tgt_loc
+
+		args = (tgt_loc,pc)
+		slot_state['push_scheme']['callback'] =\
+			 (create_scheme_go_to_tile, args )
+		
+		# check if there's someone to talk to
+		vlist = [x for x in game.obj_list_range(leader.location, 7, OLC_NPC) 
+			if (not (x in game.party) and not leader.has_met(x)) and not x.is_unconscious() and debug.pathto(leader, *location_to_axis(x.location) > 0 ) ]
+		vlist.sort()
+		if len(vlist) > 0:
+			args = (vlist[0],)
+			slot_state['push_scheme']['callback'] =\
+			 (create_talk_to, args )
+			
+		
+		return 1
+	cs = ControlScheme()
+	cs.__set_stages__([
+	  GoalStateStart(gs_init, ('configure', 100),('end', 100) ),
+	  GoalState('configure', gs_configure_wander, ('execute', 100), ('end', 100)),
+	  GoalState('execute', gs_create_and_push_scheme , ('configure', 100), ('end', 100), ),
+	  GoalStateEnd(gs_wait_cb, ('end', 100), ),
+	])
+	return cs
+
+def create_move_mouse_to_obj(obj_ref, move_obstructing_pc = False):
+	cs = ControlScheme()
+
 	def gs_init_move_mouse(slot):
 		#type: (GoalSlot)->int
 		state = slot.get_scheme_state()
 		obj = get_object(obj_ref)
-		print('create_move_mouse_to_obj init: obj ref is %s, loc = %s' % (str(obj) , str(location_to_axis(obj.location)) ) )
+		print('create_move_mouse_to_obj init: obj ref is %s, loc = %s ; move_obstructing_pc=%s' % (str(obj) , str(location_to_axis(obj.location)), str(move_obstructing_pc) ) )
 		state['mouse_move'] = {
 			'obj': obj,
 			'tweak_x': 0,
@@ -302,7 +544,13 @@ def create_move_mouse_to_obj(obj_ref):
 	cs.__set_stages__([
 		GoalStateStart( gs_init_move_mouse, ('move_mouse', 10), ('end', 10) ),
 		GoalState('move_mouse', gs_move_mouse_to_object, ('check_hovered', 10), ('end', 10) ),
-		GoalStateCondition('check_hovered', lambda slot: game.hovered == slot.get_scheme_state()['mouse_move']['obj'], ('end', 10), ('tweak', 10) ),
+		GoalStateCondition('check_hovered', lambda slot: game.hovered == slot.get_scheme_state()['mouse_move']['obj'], ('end', 100), ('is_pc_obstructing' if move_obstructing_pc else 'tweak', 100) ),
+
+		GoalStateCondition('is_pc_obstructing', lambda slot: (game.hovered in game.party) and move_obstructing_pc == True and not game.hovered.is_unconscious(), ('move_obstructing_pc', 100), ('tweak', 100) ),
+		GoalState('move_obstructing_pc', gs_create_and_push_scheme, ('center_on', 100), params={'param1': 'create_move_mouse_to_obj__obstructing_pc_wander', 'param2': (create_scheme_wander_around, (1, game.hovered))} ),
+		GoalState('center_on', gs_center_on_obj, ('move_mouse', 100), params={'param1': obj_ref}),
+
+
 		GoalState('tweak', gs_tweak_mouse_pos, ('move_mouse', 10), ('end', 10) ),
 		GoalState('end', gs_wait_cb, ('end', 10)),
 	])

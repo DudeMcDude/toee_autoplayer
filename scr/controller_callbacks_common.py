@@ -372,6 +372,83 @@ def gs_center_on_obj(slot):
 	return 1
 
 
+def gs_scroll_to_tile_and_click(slot):
+	#type: (GoalSlot)->int
+	from controller_scheme_builders import create_move_mouse_to_vacant_pos
+	state = slot.state
+	if state is None:	
+		slot.state = {
+			'scrolled': False,
+			'hovered': False,
+			'tweaked': False,
+			'clicked': False,
+		}
+	loc = slot.param1
+	if type(loc) is tuple:
+		print('scroll_to_tile_and_click: loc = %s' % (str(loc)) )
+	else:
+		print('scroll_to_tile_and_click: loc = %s' % ( str(location_to_axis(loc))) )
+	
+	if not slot.state['scrolled']:
+		center_screen_on(loc)
+		slot.state['scrolled'] = True
+		return 0
+
+	if not slot.state['hovered']:
+		controller_ui_util.move_mouse_to_loc(loc)
+		slot.state['hovered']=True
+		return 0
+	if game.hovered != OBJ_HANDLE_NULL: # target not clear
+		if slot.state['tweaked']:
+			print('scroll_to_tile_and_click: tweaking failed, aborting...')
+			return 1
+		print('scroll_to_tile_and_click: target not clear, needs tweaking' )
+		cs = create_move_mouse_to_vacant_pos(loc)
+		Playtester.get_instance().add_scheme(cs, 'scroll_to_tile_and_click__move_mouse')
+		slot.state['tweaked'] = True
+		Playtester.get_instance().push_scheme('scroll_to_tile_and_click__move_mouse')
+		return 0
+	if not slot.state['clicked']:
+		click_mouse()
+		return 1
+	return 0
+
+def is_moving_check(slot):
+	#type: (GoalSlot)->int
+	''' Returns 1 if any party member is moving/rotating (or, is in init stage)'''
+	if slot.state is None: # initialize locs
+		slot.state = {}
+		for n in range(len(game.party)):
+			pc = game.party[n]
+			slot.state['pc%d' % n] = pc.location
+			slot.state['pc%d_rot' % n] = pc.rotation
+
+		slot.state['map'] = get_current_map()
+		return 1
+	
+	result = 0
+	for n in range(len(game.party)):
+		pc = game.party[n]
+		key = 'pc%d' % n
+		key_rot = 'pc%d_rot' % n
+		if key in slot.state:
+			prev_loc = slot.state[key]	
+			prev_rot = slot.state[key_rot]
+			cur_rot = pc.rotation
+			cur_loc = pc.location
+			if prev_loc != cur_loc:
+				result = 1
+				slot.state['pc%d' % n] = pc.location
+			elif prev_rot != cur_rot:
+				result = 1
+				slot.state[key_rot] = cur_rot
+			
+		else: # in case someone joined along the way... e.g. Elmo in his impromptu dialogue
+			slot.state[key] = pc.location
+			slot.state[key_rot] = pc.rotation
+	return result
+
+
 def gs_click_and_scroll_to_tile(slot):
 	# type: (GoalSlot) -> int
 	''' old version, don't use '''
@@ -468,7 +545,7 @@ def gs_click_on_object(slot):
 			'clicked': False,
 		}
 		from controller_scheme_builders import create_move_mouse_to_obj
-		cs = create_move_mouse_to_obj(obj_ref)
+		cs = create_move_mouse_to_obj(obj_ref, True)
 		if playtester_push_scheme(cs, 'gs_click_on_object__move_mouse_to_obj'):
 			return 1
 		# print("coudn't activate scheme " + str(slot.param1))
