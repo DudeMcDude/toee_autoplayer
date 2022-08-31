@@ -1184,7 +1184,7 @@ def create_goto_area(area_name, area_id = None):
 		
 			GoalState('open_worldmap', gs_push_scheme, ('find_acq_loc_btn', 100), params={'param1': 'open_worldmap'}),
 		
-			GoalState('find_acq_loc_btn', gs_scan_get_widget_from_list, ('check_result', 100), (), {'param1': wid_list, 'param2': check_widget } ),
+			GoalState('find_acq_loc_btn', gs_scan_get_widget_from_list, ('check_result', 100), ('end', 100), {'param1': wid_list, 'param2': check_widget } ),
 			GoalState('check_result', gs_found, ('press_acq_loc_btn', 100), ('end', 300),  ),
 			GoalState('press_acq_loc_btn', gs_press_widget, ('wait_loop', 200), (), {'param1': None } ),
 
@@ -2066,8 +2066,15 @@ def create_memorize_spells(obj):
 		memo_wid = state['widget_scan']['wid_id']
 		state['memorize_spells']['memo_wid'] = memo_wid
 		if memo_wid:
+			print('gs_select_memorized_spell_slot: Got widget %s' % str(memo_wid))
 			return 1
 		return 0
+
+	def gs_clear_memo_spell_slot_selection(slot):
+		# type: (GoalSlot)->int
+		print('gs_clear_memo_spell_slot_selection: resetting state[\'memorize_spells\'][\'memo_wid\']')
+		slot.get_scheme_state()['memorize_spells']['memo_wid'] = None
+		return 1
 	
 	def gs_set_widget_scan_to_memo_spell_slot(slot):
 		# type: (GoalSlot)->int
@@ -2121,8 +2128,8 @@ def create_memorize_spells(obj):
 	  	GoalState('init_spell_selection', gs_init_memorize_spells, ('clear_memo_up', 100),('end', 100) ),
 		
 		GoalState('clear_memo_up', gs_push_scheme, ('scroll_memo_to_top', 100), params={'param1': 'memorize_clear_all', } ),
-		GoalState('scroll_memo_to_top', gs_create_and_push_scheme, ('scan_memorization_slots', 100), params={'param1': 'memorize_scroll_to_top', 'param2': (create_scheme_scroll, (WID_IDEN.CHAR_SPELLS_UI_CLASS_MEMORIZE_SCROLLBAR, -1, -1) )} ),
-		
+		GoalState('scroll_memo_to_top', gs_create_and_push_scheme, ('reset_memo_wid', 100), params={'param1': 'memorize_scroll_to_top', 'param2': (create_scheme_scroll, (WID_IDEN.CHAR_SPELLS_UI_CLASS_MEMORIZE_SCROLLBAR, -1, -1) )} ),
+		GoalState('reset_memo_wid', gs_clear_memo_spell_slot_selection, ('scan_memorization_slots',100 ), ), # so the next scan doesn't return it
 		GoalState('scan_memorization_slots', gs_scan_get_widget_from_list, ('check_memorization_slot', 100), ('end', 100), 
 			params={'param1':  WID_IDEN.CHAR_SPELLS_UI_MEMORIZE_SPELL_WINDOWS, 'param2': memoslot_check } ),
 		GoalState('check_memorization_slot', gs_select_memorized_spell_slot, ('scroll_known_to_top', 100), ('end', 100) ),
@@ -2139,7 +2146,7 @@ def create_memorize_spells(obj):
 		GoalState('mouse_down', gs_lmb_down, ('set_widget_scan_to_memo_spell_slot', 100),  ),
 		GoalState('set_widget_scan_to_memo_spell_slot', gs_set_widget_scan_to_memo_spell_slot, ('move_mouse_to_memo_slot', 100), ),
 		GoalState('move_mouse_to_memo_slot', gs_move_mouse_to_widget, ('mouse_up', 330), ('end', 100), ),
-		GoalState('mouse_up', gs_lmb_up, ('scan_memorization_slots', 100),  ),
+		GoalState('mouse_up', gs_lmb_up, ('reset_memo_wid', 100),  ),
 
 	  GoalStateEnd(gs_wait_cb, ('end', 100), ),
 	])

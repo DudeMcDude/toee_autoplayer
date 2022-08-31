@@ -168,6 +168,7 @@ def gs_scan_get_widget_from_list(slot):
 			if res:	
 				state['widget_scan']['found'] = True
 				state['widget_scan']['wid_id'] = wid_list[idx]
+				state['widget_scan']['text_contents'] = []
 				# print(str(wid))
 				return 1
 			# else:
@@ -195,9 +196,10 @@ def gs_scan_get_widget_from_list(slot):
 				break
 
 	if not should_scroll:
-		print('gs_scan_get_widget_from_list: should not scroll!')
+		print('gs_scan_get_widget_from_list: Not found & should not scroll! (no content diffs from saved)')
 		print('gs_scan_get_widget_from_list: saved contents: %s, current contents: %s' % (saved_contents, text_contents))
-		return 1
+		state['widget_scan']['text_contents'] = []
+		return 0
 
 	print('gs_scan_get_widget_from_list: scrolling down')
 	# save contents for later comparison

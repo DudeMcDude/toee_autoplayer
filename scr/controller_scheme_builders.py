@@ -53,7 +53,7 @@ def create_party_pool_add_pc_scheme():
 
 	cs.__set_stages__([
 		
-		GoalStateStart( gs_scan_get_widget_from_list, ('check_result', 100), (), {'param1': wid_list, 'param2': check_widget } ),
+		GoalStateStart( gs_scan_get_widget_from_list, ('check_result', 100), ('end', 100), {'param1': wid_list, 'param2': check_widget } ),
 		GoalState('check_result', gs_found, ('press_char_btn', 100), ('end', 300),  ),
 		GoalState('press_char_btn', gs_press_widget, ('press_add', 200), (), {'param1': None } ),
 		
