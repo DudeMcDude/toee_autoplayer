@@ -78,7 +78,7 @@ def gs_master(slot):
 		
 		if slot.state['needs_memorize']:
 			slot.state['needs_memorize'] = False
-			pt.push_scheme('memorize_spells')
+			pt.push_scheme('rest')
 			return 0
 		
 		leader = game.leader
