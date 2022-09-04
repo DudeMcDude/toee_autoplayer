@@ -343,8 +343,8 @@ def create_scheme_go_to_tile( loc, pc = None, DIST_THRESHOLD = 15 ):
 			print('Party locations:')
 			
 			group = get_group()
-			for pc in group:
-				print(location_to_axis(pc.location))
+			for pc_ in group:
+				print(location_to_axis(pc_.location))
 			return 0
 		state['try_count'] += 1
 		
@@ -541,15 +541,28 @@ def create_move_mouse_to_obj(obj_ref, move_obstructing_pc = False):
 		controller_ui_util.move_mouse_to_obj(obj, off_x, off_y)
 		return 1
 
+	def gs_is_pc_obstructing(slot):		
+		# type: (GoalSlot)->int
+		hovered = game.hovered
+		cond = hovered != OBJ_HANDLE_NULL and (hovered in game.party) and move_obstructing_pc == True and not hovered.is_unconscious()
+		if cond:
+			state = slot.get_scheme_state()
+			state['obstructing_pc'] = hovered
+			state['push_scheme'] = {
+				'id': 'create_move_mouse_to_obj__obstructing_pc_wander',
+				'callback': (create_scheme_wander_around, (1, hovered) ),
+			}	
+			return 1
+		return 0
+		
 	cs.__set_stages__([
 		GoalStateStart( gs_init_move_mouse, ('move_mouse', 10), ('end', 10) ),
 		GoalState('move_mouse', gs_move_mouse_to_object, ('check_hovered', 10), ('end', 10) ),
 		GoalStateCondition('check_hovered', lambda slot: game.hovered == slot.get_scheme_state()['mouse_move']['obj'], ('end', 100), ('is_pc_obstructing' if move_obstructing_pc else 'tweak', 100) ),
 
-		GoalStateCondition('is_pc_obstructing', lambda slot: (game.hovered in game.party) and move_obstructing_pc == True and not game.hovered.is_unconscious(), ('move_obstructing_pc', 100), ('tweak', 100) ),
-		GoalState('move_obstructing_pc', gs_create_and_push_scheme, ('center_on', 100), params={'param1': 'create_move_mouse_to_obj__obstructing_pc_wander', 'param2': (create_scheme_wander_around, (1, game.hovered))} ),
+		GoalStateCondition('is_pc_obstructing', gs_is_pc_obstructing, ('move_obstructing_pc', 100), ('tweak', 100) ),
+		GoalState('move_obstructing_pc', gs_create_and_push_scheme, ('center_on', 100), ),
 		GoalState('center_on', gs_center_on_obj, ('move_mouse', 100), params={'param1': obj_ref}),
-
 
 		GoalState('tweak', gs_tweak_mouse_pos, ('move_mouse', 10), ('end', 10) ),
 		GoalState('end', gs_wait_cb, ('end', 10)),
