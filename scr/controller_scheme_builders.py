@@ -309,7 +309,7 @@ def create_scheme_go_to_tile( loc, pc = None, DIST_THRESHOLD = 15 ):
 	cs = ControlScheme()
 
 	def get_group():
-		if pc is None:
+		if pc is None or not pc in game.party:
 			group = game.party
 		else:
 			group = [pc,]
@@ -330,9 +330,9 @@ def create_scheme_go_to_tile( loc, pc = None, DIST_THRESHOLD = 15 ):
 			return 0
 		
 		for n in range(len(group)):
-			pc = group[n]
-			state['go_to_tile']['pc%d' % n] = pc.location
-			state['go_to_tile']['pc%d_rot' % n] = pc.rotation
+			pc_ = group[n]
+			state['go_to_tile']['pc%d' % n] = pc_.location
+			state['go_to_tile']['pc%d_rot' % n] = pc_.rotation
 		return 1
 
 	def gs_try_count_failsafe(slot):
@@ -343,8 +343,8 @@ def create_scheme_go_to_tile( loc, pc = None, DIST_THRESHOLD = 15 ):
 			print('Party locations:')
 			
 			group = get_group()
-			for pc in group:
-				print(location_to_axis(pc.location))
+			for pc_ in group:
+				print(location_to_axis(pc_.location))
 			return 0
 		state['try_count'] += 1
 		
