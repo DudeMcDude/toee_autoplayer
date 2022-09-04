@@ -6,7 +6,6 @@ import autoui as aui
 from controller_ui_util import *
 import controller_ui_util
 import gamedialog as dlg
-from controller_navigation import map_connectivity, get_map_course
 from controller_constants import *
 
 #region utils

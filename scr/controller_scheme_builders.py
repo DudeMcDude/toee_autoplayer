@@ -408,6 +408,7 @@ def create_scheme_wander_around_use_area_default(count_max_def = 50, pc = None):
 		count_max = random_wander_amount[cur_map]
 	else:
 		count_max = count_max_def
+	
 	return create_scheme_wander_around(count_max, pc)
 
 
@@ -454,7 +455,7 @@ def create_scheme_wander_around(count_max_def = 50, pc = None):
 		if state['count'] >= state['count_max']:
 			return 0
 		print('gs_configure_wander: count = %d / %d' % (state['count'] , state['count_max']))
-		if group_percent_hp(leader) < 66: # go rest if low on HP (or high casualties!)
+		if pc is None and group_percent_hp(leader) < 66: # go rest if low on HP (or high casualties!)
 			return 0
 		state['count'] += 1
 		prev_src = state['src_loc']

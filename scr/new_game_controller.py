@@ -1,5 +1,4 @@
 from controller_ui_util import WID_IDEN
-from scr.controller_scheme_builders import create_scheme_wander_around_use_area_default
 from toee import *
 from toee import PySpellStore, game
 from controllers import ControlScheme, GoalState, GoalStateStart,GoalStateEnd, ControllerBase, GoalStateCondition, GoalStateCreatePushScheme
