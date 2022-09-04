@@ -1,4 +1,5 @@
 from controller_ui_util import WID_IDEN
+from scr.controller_scheme_builders import create_scheme_wander_around_use_area_default
 from toee import *
 from toee import PySpellStore, game
 from controllers import ControlScheme, GoalState, GoalStateStart,GoalStateEnd, ControllerBase, GoalStateCondition, GoalStateCreatePushScheme
@@ -1237,7 +1238,7 @@ def create_scheme_moathouse():
 	  GoalStateCreatePushScheme('navigate_to_exterior_map', 'go_to_map', create_scheme_navigate_to_map, (AREA_EXTERIOR_MAP, ),('check_exterior_map', 100) ),
 		
 	  GoalStateCreatePushScheme('go_random_map', 'go_to_map', create_scheme_go_random_map, (), ('wander_around', 100) ),
-	  GoalStateCreatePushScheme('wander_around', 'wander_around', create_scheme_wander_around, (WANDER_COUNT,), ('check_counter', 100) ),
+	  GoalStateCreatePushScheme('wander_around', 'wander_around', create_scheme_wander_around_use_area_default, (WANDER_COUNT,), ('check_counter', 100) ),
 	  GoalStateCondition('check_counter', gs_check_counter, ('go_random_map', 100), ('end', 100) ),
 	  
 	  GoalStateEnd(gs_wait_cb, ('end', 100), ),
@@ -1278,7 +1279,7 @@ def create_scheme_temple_random():
 	  GoalStateCreatePushScheme('navigate_to_exterior_map', 'go_to_map', create_scheme_navigate_to_map, (AREA_EXTERIOR_MAP, ),('check_exterior_map', 100) ),
 		
 	  GoalStateCreatePushScheme('go_random_map', 'go_to_map', create_scheme_go_random_map, (), ('wander_around', 100) ),
-	  GoalStateCreatePushScheme('wander_around', 'wander_around', create_scheme_wander_around, (WANDER_COUNT,), ('check_counter', 100) ),
+	  GoalStateCreatePushScheme('wander_around', 'wander_around', create_scheme_wander_around_use_area_default, (WANDER_COUNT,), ('check_counter', 100) ),
 	  GoalStateCondition('check_counter', gs_check_counter, ('go_random_map', 100), ('end', 100) ),
 	  
 	  GoalStateEnd(gs_wait_cb, ('end', 100), ),

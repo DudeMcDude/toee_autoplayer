@@ -402,24 +402,27 @@ def create_scheme_go_to_tile( loc, pc = None, DIST_THRESHOLD = 15 ):
 	])
 	return cs
 
+def create_scheme_wander_around_use_area_default(count_max_def = 50, pc = None):
+	cur_map = get_current_map()
+	if cur_map in random_wander_amount:
+		count_max = random_wander_amount[cur_map]
+	else:
+		count_max = count_max_def
+	return create_scheme_wander_around(count_max, pc)
+
+
 def create_scheme_wander_around(count_max_def = 50, pc = None):
 	import debug
 	def gs_init(slot):
 		#type: (GoalSlot)->int
 		state = slot.get_scheme_state()
-
-		cur_map = get_current_map()
-		if cur_map in random_wander_amount:
-			count_max = random_wander_amount[cur_map]
-		else:
-			count_max = count_max_def
 		
 		state['wander_around'] = {
 			'tgt_loc': None,
 			'src_loc': None,
 			'bias': (0,0),
 			'count': 0,
-			'count_max': count_max,
+			'count_max': count_max_def,
 		}
 		state['push_scheme'] = {
 			'id': 'wander_goto_tile',
@@ -450,6 +453,7 @@ def create_scheme_wander_around(count_max_def = 50, pc = None):
 		state = slot_state['wander_around']
 		if state['count'] >= state['count_max']:
 			return 0
+		print('gs_configure_wander: count = %d / %d' % (state['count'] , state['count_max']))
 		if group_percent_hp(leader) < 66: # go rest if low on HP (or high casualties!)
 			return 0
 		state['count'] += 1
