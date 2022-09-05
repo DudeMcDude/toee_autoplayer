@@ -449,6 +449,9 @@ def create_scheme_wander_around(count_max_def = 50, pc = None):
 		# type: (GoalSlot)->int
 		leader = game.leader if (pc is None) else pc
 		print('gs_configure_wander: leader = %s' % str(leader))
+		if leader == OBJ_HANDLE_NULL:
+			return 0
+		
 		slot_state = slot.get_scheme_state()
 		
 		state = slot_state['wander_around']
