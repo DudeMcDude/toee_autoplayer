@@ -500,7 +500,8 @@ def create_scheme_wander_around(count_max_def = 50, pc = None):
 		
 		# check if there's someone to talk to
 		vlist = [x for x in game.obj_list_range(leader.location, 7, OLC_NPC) 
-			if (not (x in game.party) and not leader.has_met(x)) and not x.is_unconscious() and debug.pathto(leader, *location_to_axis(x.location) > 0 ) ]
+			if (not (x in game.party) and not leader.has_met(x)) and not x.is_unconscious() 
+			and debug.pathto(leader, *location_to_axis(x.location)) > 0 ]
 		vlist.sort()
 		if len(vlist) > 0:
 			args = (vlist[0],)

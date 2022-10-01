@@ -641,8 +641,8 @@ def find_barter_line(dlg_state):
 	#type: (dlg.DialogState)->list
 	N = dlg_state.reply_count
 	for i in range(N):
-		effect = dlg_state.get_reply_effect(i)
-		if effect.find('B:') >= 0:
+		reply_opcode = dlg_state.get_reply_opcode(i)
+		if reply_opcode in [3, 26]: # barter or NPC barter
 			return i
 	return -1
 
