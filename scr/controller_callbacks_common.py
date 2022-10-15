@@ -593,6 +593,43 @@ def gs_anti_hang(slot):
 		return 0
 	return 1
 
+def gs_anti_hang_rapid(slot):
+	# type: (GoalSlot)->int
+	MAX_COUNT = 1000
+	state = slot.get_scheme_state()
+	if not 'anti_hang' in state:
+		state['anti_hang'] = {
+			'count': 0
+		}
+		for idx, pc in enumerate(game.party):
+			state['anti_hang']['pc%d' % idx] = pc.location
+		return 1
+	
+	changed_detected = False
+	for idx, pc in enumerate(game.party):
+		key = 'pc%d' % idx
+		cur_loc = pc.location
+
+		if not key in state['anti_hang']:
+			changed_detected = True
+			state['anti_hang'][key] = cur_loc
+			continue
+	
+		prev_loc = state['anti_hang'][key]
+		if prev_loc != cur_loc:
+			changed_detected = True
+			state['anti_hang'][key] = cur_loc
+			continue
+	
+	if changed_detected:
+		state['anti_hang']['count'] = 0
+		return 1
+	
+	state['anti_hang']['count'] += 1
+	if state['anti_hang']['count'] > MAX_COUNT:
+		return 0
+	return 1
+
 def arrived_at(slot):
     # type: (GoalSlot)->int
 	loc = slot.param1

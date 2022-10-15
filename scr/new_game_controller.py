@@ -397,7 +397,7 @@ def combat_handler(slot):
 			return 0
 		combat_action_handler(slot)
 		return 1
-
+	
 	def gs_combat_end(slot):
 		Playtester.get_instance().combat_mode_set(False)
 		return 1
@@ -407,12 +407,24 @@ def combat_handler(slot):
 			if pc.type == obj_t_pc:
 				pc.item_wield_best_all()
 		return 1
+	def gs_combat_stuck_handler(slot):
+		pt = Playtester.get_instance()
+		pt.add_scheme( create_load_game_scheme(INITIAL_LOAD), 'load_game' )
+		pt.interrupt()
+		Playtester.get_instance().combat_mode_set(False)
+		pt.push_scheme('load_game')
+		return
 
 	cs.__set_stages__([
 		GoalStateStart(gs_combat_init, ('combat_loop', 100), ('end', 100),  ),
-		GoalState('combat_loop', gs_combat_action_handler, ('combat_loop', 100), ('loot_critters', 100),  ),
+		GoalState('combat_loop', gs_combat_action_handler, ('anti_hang', 100), ('loot_critters', 100),  ),
+		GoalState('anti_hang', gs_anti_hang_rapid, ('combat_loop', 100), ('combat_stuck', 100), ),
+
 		GoalState('loot_critters', gs_loot_after_combat, ('equip_best', 100),  ),
 		GoalState('equip_best', gs_item_wield_best_all, ('end', 100) ),
+
+		GoalState('combat_stuck', gs_combat_stuck_handler, ('end',  100), ),
+
 		GoalState('end',gs_combat_end, ('end', 100),   ),
 	])
 	id = 'handle_combat'

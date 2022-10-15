@@ -179,9 +179,21 @@ class WID_IDEN:
     CHAR_SPELLS_UI_CLASS_MEMORIZE_WINDOW =  [ ('char_spells_ui_class_memorize_window',),]
     CHAR_SPELLS_UI_CLASS_MEMORIZE_SCROLLBAR =  [ ('char_spells_ui_class_memorize_window',),None, 0]
 
-    CHAR_EDITOR_UI_CLASS_BTNS = [ ('char_editor_class_ui.c 193',), ('')]
+    # CHAR EDITOR
+    CHAR_EDITOR_UI_STAGE_BTN_CLASS    = [ ('char_ui.c 2517',), ('char_editor_class',)]
+    CHAR_EDITOR_UI_STAGE_BTN_STATS    = [ ('char_ui.c 2517',), ('char_editor_stats',)]
+    CHAR_EDITOR_UI_STAGE_BTN_FEATURES = [ ('char_ui.c 2517',), ('char_editor_features',)]
+    CHAR_EDITOR_UI_STAGE_BTN_SKILLS   = [ ('char_ui.c 2517',), ('char_editor_skills',)]
+    CHAR_EDITOR_UI_STAGE_BTN_FEATS    = [ ('char_ui.c 2517',), ('char_editor_feats',)]
+    CHAR_EDITOR_UI_STAGE_BTN_SPELLS   = [ ('char_ui.c 2517',), ('char_editor_spells',)]
+    
+    CHAR_EDITOR_UI_CLASS_BTNS = [ ( ('char_editor_class_ui.c 193',), x) for x in range (0, 11) ]
 
-
+    CHAR_EDITOR_UI_SKILL_BTNS     = [ (('char_editor_skills_ui.c 430',), ('char_editor_skills_ui.c 472',), x) for x in range(8) ]
+    CHAR_EDITOR_UI_SKILL_INC_BTNS = [ (('char_editor_skills_ui.c 430',), ('char_editor_skills_ui.c 493',), x) for x in range(8) ]
+    CHAR_EDITOR_UI_SKILL_DEC_BTNS = [ (('char_editor_skills_ui.c 430',), ('char_editor_skills_ui.c 517',), x) for x in range(8) ]
+    CHAR_EDITOR_UI_SKILL_SCROLLBAR = [ ('char_editor_skills_ui.c 430',), 0]
+    
     PARTY_UI_LEVELUP_BTNS = [  [('party_ui_main_window',), x, ('party_ui_level_icon',)] for x in range(0,8)]
 
     POPUP_UI_OK_BTN = [('popup_ui_main_window',), ('popup_ui_button', ), 0]
