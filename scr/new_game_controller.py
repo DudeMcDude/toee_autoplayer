@@ -648,6 +648,15 @@ def gs_handle_dialogue(slot):
 	
 	ds = dlg.get_current_state()
 
+	# VANILLA FIX: loop guard - info-question menus (e.g. Jaroo) cycle forever when reply 0 always leads back.
+	# After a line has been visited 3 times, take its last reply (conventionally the exit/goodbye option).
+	visits = slot.state.setdefault('line_visits', {})
+	visits[ds.line_number] = visits.get(ds.line_number, 0) + 1
+	if visits[ds.line_number] > 3 and ds.reply_count > 0:
+		print('gs_handle_dialogue: line %d visited %d times, taking last reply' % (ds.line_number, visits[ds.line_number]))
+		dlg_reply(ds.reply_count - 1)
+		return 0
+
 	if ds.line_number in presets:
 		reply = presets[ds.line_number]
 		dlg_reply(reply)
@@ -1106,7 +1115,7 @@ def create_hommlet_scheme0():
 	cs = ControlScheme()
 	WENCH_DOOR_ICON_LOC = (617, 395)
 	WENCH_DOOR_ENTRANCE_LOC = (619, 405)
-	WENCH_EXIT_ICON_LOC = (486, 488)
+	WENCH_EXIT_ICON_LOC = (486, 489) # VANILLA FIX: Door Icon is at (486,489) in the vanilla Inn
 	
 	def furnok_dlg_handler(ds, presets, state):
 		#type: (dlg.DialogState, dict, dict)->int
