@@ -1083,6 +1083,25 @@ def create_hommlet_scheme1():
 		])
 	return cs
 
+def gs_leave_map_or_teleport(slot): # VANILLA FIX
+	'''param1 - map id we expect to leave; param2 - (map, (x,y)) fallback destination.
+	Waits up to ~15s for the map change the previous click should cause; otherwise logs the nearby
+	scenery/portals (to find the real exit icon) and fade_and_teleports to the fallback.'''
+	if get_current_map() != slot.param1:
+		return 1
+	st = slot.state
+	if st is None:
+		slot.state = st = {}
+	st['n'] = st.get('n', 0) + 1
+	if st['n'] < 150: # ~15s at 100ms ticks
+		return 0
+	l = game.obj_list_range(game.leader.location, 60, OLC_PORTAL | OLC_SCENERY)
+	print('gs_leave_map_or_teleport: still on map %d; nearby %s' % (slot.param1, str([(str(x), location_to_axis(x.location)) for x in l][:30])))
+	m, (x, y) = slot.param2
+	game.fade_and_teleport(0, 0, 0, m, x, y)
+	print('gs_leave_map_or_teleport: teleported party to map %d %s' % (m, str((x, y))))
+	return 1
+
 def create_hommlet_scheme0():
 	cs = ControlScheme()
 	WENCH_DOOR_ICON_LOC = (617, 395)
@@ -1122,8 +1141,7 @@ def create_hommlet_scheme0():
 			
 			GoalState('', gs_center_on_tile, ('', 800), params = {'param1':  (483,483) } ), # Exit
 			GoalState('', gs_scroll_to_tile_and_click, ('', 500), params = {'param1': WENCH_EXIT_ICON_LOC }),
-		
-
+			GoalState('', gs_leave_map_or_teleport, ('', 500), params = {'param1': 5007, 'param2': (5001, WENCH_DOOR_ENTRANCE_LOC)}), # VANILLA FIX: exit click can miss; make sure we're outside before hommlet1
 		], ('end', 500))
 			
 		+ [GoalState('end', gs_idle, ('end', 100) ), ]
