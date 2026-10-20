@@ -56,6 +56,8 @@ def get_object(obj_identifier):
 			if type(proto_id) == int:
 				proto_id = (proto_id,) 
 			obj_list = [x for x in obj_list if x.proto in proto_id]
+			if len(obj_list) == 0 and 'location' not in obj_identifier: # DRUID FIX: proto not in the leader's vicinity (e.g. vanilla Hrudek placement) -> widen to the whole map area
+				obj_list = [x for x in game.obj_list_range(loc, 200, obj_type) if x.proto in proto_id]
 		if len(obj_list) == 0:
 			return OBJ_HANDLE_NULL
 		if 'guid' in obj_identifier:
@@ -229,6 +231,10 @@ def gs_move_mouse_to_widget(slot):
 	wid = controller_ui_util.obtain_widget(wid_identifier)
 	if wid is None:
 		return 0
+	try: # REVIEW PATCH: debug print
+		print('gs_move_mouse_to_widget: %s -> name=%s x=%s y=%s w=%s h=%s' % (str(wid_identifier), getattr(wid,'name','?'), wid.x, wid.y, getattr(wid,'width','?'), getattr(wid,'height','?')))
+	except Exception as e:
+		print('gs_move_mouse_to_widget: debug print failed %s' % str(e))
 	controller_ui_util.move_mouse_to_widget(wid)
 	return 1
 

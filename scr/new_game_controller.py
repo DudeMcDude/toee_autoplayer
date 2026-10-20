@@ -18,7 +18,7 @@ import debug
 
 PLAYTEST_EN  = True
 SKIP_LOOTING = False
-START_NEW_GAME = False
+START_NEW_GAME = True
 INITIAL_LOAD = ['Moathousing', 'Did some rounds', 'Fighting!']
 LOGGING_EN   = True
 

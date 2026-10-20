@@ -66,7 +66,14 @@ def click_key_dlg_btn():
     
 def move_mouse_to_widget(wid):
     # type: (aui.TWidget)->None
-    move_mouse(wid.x, wid.y)
+    # REVIEW PATCH (dist copy only): aim at the widget centre instead of its top-left corner
+    w = getattr(wid, 'width', None)
+    h = getattr(wid, 'height', None)
+    if not isinstance(w, int) or not isinstance(h, int) or w <= 0 or h <= 0:
+        w, h = 10, 10
+        if getattr(wid, 'name', '') == 'pc_creation.c 2048': # REVIEW PATCH: Begin Adventuring - the top-left (+5) misses the real hit rect under scaling
+            w, h = 120, 50 # legacy button wrapper exposes no size: nudge 5px inside so scaling round-off can't miss the rect
+    move_mouse(wid.x + w//2, wid.y + h//2)
     return
 
 

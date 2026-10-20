@@ -82,7 +82,7 @@ def create_new_game_scheme():
 		], ('char_pool_begin_adventure', 300), ('char_pool_begin_adventure', 300))
 		+[
 		GoalState('char_pool_begin_adventure', gs_press_widget, ('do_shopmap', 100), (), {'param1': WID_IDEN.CHAR_POOL_BEGIN_ADVENTURE } ),
-		GoalState('do_shopmap', gs_push_scheme, ('end', 100), (), {'param1': 'shopmap'} ),
+		GoalState('do_shopmap', gs_push_scheme, ('end', 100), (), {'param1': 'true_neutral_vig'} ), # REVIEW PATCH: vanilla (non-Co8) install has no shopmap chests
 		GoalState('end', gs_wait_cb, ('end', 100), (), ),
 	])
 	return cs
@@ -106,16 +106,57 @@ def create_shop_map_scheme():
 		)
 	return cs
 
+def gs_wait_for_map(slot): # REVIEW PATCH
+	if len(game.party) == 0:
+		return 0
+	return 1 if get_current_map() == slot.param1 else 0
+
+def gs_approach_obj(slot): # DRUID FIX
+	'''param1 - obj ref; param2 - tile distance. Cheat-moves the party next to the target when it is far away / under fog of war.'''
+	obj = get_object(slot.param1)
+	if obj == OBJ_HANDLE_NULL:
+		return 0
+	dist = slot.param2 or 8
+	x, y = location_to_axis(obj.location)
+	lx, ly = location_to_axis(game.leader.location)
+	if max(abs(lx - x), abs(ly - y)) <= dist:
+		return 1
+	for i, pc in enumerate(game.party):
+		pc.move(location_from_axis(x + i - 2, y + dist))
+	print('gs_approach_obj: moved party near %s at %s' % (str(obj), str((x, y))))
+	return 1
+
+def gs_click_to_talk_unless_left_map(slot): # DRUID FIX
+	if get_current_map() != slot.param2 or gamedialog.is_engaged():
+		return 1
+	return gs_click_to_talk(slot)
+
+def gs_handle_dialogue_prescripted_unless_left_map(slot): # DRUID FIX
+	if get_current_map() != slot.param2:
+		return 1
+	return gs_handle_dialogue_prescripted(slot)
+
+def gs_druid_diag(slot): # DRUID FIX diag
+	from toee import game as g
+	h = get_object({'proto': 14322})
+	print('DRUIDDIAG map=%s leader=%s hrudek=%s hloc=%s' % (get_current_map(), str(location_to_axis(g.leader.location)), str(h), str(location_to_axis(h.location)) if h != OBJ_HANDLE_NULL else '-'))
+	for r in (60, 200, 600):
+		l = game.obj_list_range(g.leader.location, r, OLC_NPC)
+		print('DRUIDDIAG r=%d n=%d %s' % (r, len(l), str([(x.proto, str(x), location_to_axis(x.location)) for x in l][:40])))
+	return 1
+
 def create_true_neutral_scheme():
 	cs = ControlScheme()
 	
 	druid_dlg_choices = [0, 0,0,0,0]
 	cs.__set_stages__( 
-		[GoalStateStart( gs_wait_cb, ('talk_jaroo', 500)),] +
+		[GoalStateStart( gs_wait_for_map, ('talk_jaroo', 2000), (), {'param1': 5100}),] + # REVIEW PATCH: wait until the vignette map is actually loaded (slides can take ~60s)
 		GoalState.from_sequence('talk_jaroo', [
-			GoalState('', gs_scroll_to_tile, ('', 3500), params = {'param1': (488, 474) }),
-			GoalState('', gs_click_to_talk, ('', 3000), params = {'param1': {'proto': 14322, 'location': location_from_axis(488, 474)}} ),
-			GoalState('', gs_handle_dialogue_prescripted, ('', 500), (), {'param1': druid_dlg_choices } ),
+			GoalState('', gs_druid_diag, ('', 100)), # DRUID FIX diag
+			GoalState('', gs_approach_obj, ('', 2000), params = {'param1': {'proto': 14322}, 'param2': 8}), # DRUID FIX: vanilla party starts ~58 tiles from Hrudek, under fog of war (black, unhoverable) -> bring party near
+			GoalState('', gs_center_on_obj, ('', 3500), params = {'param1': {'proto': 14322} }), # DRUID FIX: center on Hrudek himself instead of a hardcoded Co8 tile
+			GoalState('', gs_click_to_talk_unless_left_map, ('', 3000), params = {'param1': {'proto': 14322}, 'param2': 5100} ), # DRUID FIX: Hrudek may start the dialogue himself on approach, and the vignette ends with a map change
+			GoalState('', gs_handle_dialogue_prescripted_unless_left_map, ('', 500), (), {'param1': druid_dlg_choices, 'param2': 5100 } ),
 		], ('do_hommlet', 500)) + 
 		[GoalState('do_hommlet', gs_push_scheme, ('end', 100), (), {'param1': 'hommlet0'} ),
 		GoalState('end', gs_wait_cb, ('end', 100) ), ]
