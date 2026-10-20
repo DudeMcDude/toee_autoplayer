@@ -649,10 +649,12 @@ def gs_handle_dialogue(slot):
 	ds = dlg.get_current_state()
 
 	# VANILLA FIX: loop guard - info-question menus (e.g. Jaroo) cycle forever when reply 0 always leads back.
-	# After a line has been visited 3 times, take its last reply (conventionally the exit/goodbye option).
+	# After a line has been visited N times, take its last reply (conventionally the exit/goodbye option).
+	# Opt-in via presets['loop_guard'] = N (Furnok's gambling loop repeats on purpose until quest 18 completes).
+	guard = presets.get('loop_guard')
 	visits = slot.state.setdefault('line_visits', {})
 	visits[ds.line_number] = visits.get(ds.line_number, 0) + 1
-	if visits[ds.line_number] > 3 and ds.reply_count > 0:
+	if guard and visits[ds.line_number] > guard and ds.reply_count > 0:
 		print('gs_handle_dialogue: line %d visited %d times, taking last reply' % (ds.line_number, visits[ds.line_number]))
 		dlg_reply(ds.reply_count - 1)
 		return 0
@@ -1080,7 +1082,7 @@ def create_hommlet_scheme1():
 		
 		GoalState.from_sequence('handle_jaroo', [
 			GoalState('', gs_click_to_talk, ('', 1500), params = {'param1': {'proto': 14005}} ), # Jaroo
-			GoalState('', gs_handle_dialogue, ('', 500), (), {'param1': jaroo_handler, 'param2': {318: 0, 323: 1, } } ), # Jaroo
+			GoalState('', gs_handle_dialogue, ('', 500), (), {'param1': jaroo_handler, 'param2': {318: 0, 323: 1, 'loop_guard': 3} } ), # Jaroo
 			
 			GoalState('', gs_center_on_tile, ('', 400), params = {'param1':  (495,478) } ), # Exit
 			GoalState('', gs_scroll_to_tile_and_click, ('', 500), params = {'param1': JAROO_EXIT_ICON_LOC }),
