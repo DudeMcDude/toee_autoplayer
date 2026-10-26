@@ -464,6 +464,17 @@ class ControllerBase:
         return scheme_inst
 
     def execute(self):
+        # an exception here would drop the tick chain silently (nothing reschedules): log it and keep ticking
+        try:
+            return self.__execute__()
+        except Exception, e:
+            import traceback
+            print('Controller.execute raised: %s' % traceback.format_exc())
+            if self.__exc_hook__: self.__exc_hook__(traceback.format_exc())
+            self.schedule(500)
+    __exc_hook__ = None
+
+    def __execute__(self):
         # print('Controller execute()')
         if not self.__active__:
             return

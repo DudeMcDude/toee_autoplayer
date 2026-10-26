@@ -298,6 +298,8 @@ def gs_iwd_tour(slot):
 		report(); return 1
 	st = ST['plan'][ST['i']]
 	st.n += 1
+	if st.n % 25 == 1 or os.environ.get('IWDAP_VERBOSE'):
+		log('TICK step %d/%d %s n=%d map %d dlg %d' % (ST['i'], len(ST['plan']), st.kind, st.n, get_current_map(), dlg.is_engaged()))
 	try:
 		done = {'start': tick_start, 'enter': tick_enter, 'leave': tick_leave, 'talk': tick_talk}[st.kind](st)
 	except Exception, e:
@@ -328,6 +330,7 @@ def setup_playtester(autoplayer):
 	autoplayer.set_dialog_handler(iwd_dialog_handler)
 	autoplayer.set_combat_handler(lambda slot: None)
 	autoplayer.push_scheme('iwd_easthaven')
+	autoplayer.__exc_hook__ = lambda tb: anomaly('controller tick raised: ' + tb)
 	log('scenario easthaven: core=%s' % CORE)
 	if LOG:
 		f = open(LOG, 'a'); f.write('SHOT town_start\n'); f.close()
