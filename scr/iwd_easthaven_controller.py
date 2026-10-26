@@ -58,6 +58,51 @@ def load_quest_givers():
 			res[int(m.group(1))] = {'ident': m.group(2), 'quests': quests}
 	return res
 
+GLOB_RE = r'T\.(Global|GlobalGT|GlobalLT)\(c, "(\w+)", "GLOBAL", (\d+)\)'
+
+def load_flag_deps(givers):
+	'''per giver: 'sets' = GLOBAL vars its dialogue actions SetGlobal; 'needs' = [(var, op, value, negated)] tested by the
+	conditions of its quest-giving replies (story flags other conversations must set first, or must not have set yet)'''
+	d = os.path.join(CORE, 'scr')
+	for n in sorted(os.listdir(d)):
+		m = re.match(r'py0(\d{4})ie_(\w+)\.py$', n)
+		if not m or int(m.group(1)) not in givers:
+			continue
+		g = givers[int(m.group(1))]
+		src = open(os.path.join(d, n)).read()
+		g['sets'] = set(re.findall(r'SetGlobal\(c, "(\w+)", "GLOBAL", \d+\)', src))
+		g['needs'] = []
+		for fm in re.finditer(r'def ie_c(\d+)\(npc, pc\):\n(.*)', src):
+			if int(fm.group(1)) in g['quests']:
+				for neg, op, var, v in re.findall(r'(not )?' + GLOB_RE, fm.group(2)):
+					g['needs'].append((var, op, int(v), bool(neg)))
+
+def flag_order(sids, givers):
+	'''order the visits so a giver whose quest reply needs flag X > 0 comes after the giver setting X, and one whose
+	quest reply needs X == 0 comes before it (data-driven from the converted dialogue conditions)'''
+	before = set()   # (a, b): a must be visited before b
+	for b in sids:
+		for var, op, v, neg in givers[b].get('needs', []):
+			if neg or op == 'GlobalLT' and v > 1:
+				continue          # (X < 2 already holds before anyone sets X: no order)
+			zero = op == 'Global' and v == 0 or op == 'GlobalLT'
+			for a in sids:
+				if a != b and var in givers[a].get('sets', ()):
+					if zero: before.add((b, a))
+					else: before.add((a, b))
+	order = list(sids)
+	for _ in range(len(order) ** 2):
+		moved = 0
+		for a, b in before:
+			if (b, a) in before: continue        # a cycle: the second pass handles it
+			ia, ib = order.index(a), order.index(b)
+			if ia > ib:
+				order.insert(ib, order.pop(ia)); moved = 1
+		if not moved: break
+	for a, b in sorted(before):
+		log('ORDER %s before %s' % (givers[a]['ident'], givers[b]['ident']))
+	return order
+
 def load_dlg_graph(sid):
 	'''-> (npc_lines {line: [reply lines]}, reply_to {reply line: npc line}) of dlg/0<sid>*.dlg'''
 	f = _core_file('dlg', '%05d' % sid)
@@ -154,18 +199,26 @@ def build_plan():
 	givers = load_quest_givers()
 	ST['givers'] = givers
 	locate_givers(givers)
-	town = [s for s in givers if TOWN in HOME.get(s, [])]
-	inside = [s for s in givers if s not in town and HOME.get(s)]
+	load_flag_deps(givers)
 	for sid in sorted(givers):
 		g = givers[sid]
-		log('GIVER %s script %d areas %s quests %s' % (g['ident'], sid, HOME.get(sid), sorted(set([q for v in g['quests'].values() for _, q in v]))))
+		log('GIVER %s script %d areas %s quests %s needs %s' % (g['ident'], sid, HOME.get(sid), sorted(set([q for v in g['quests'].values() for _, q in v])), g.get('needs')))
+	sids = flag_order(sorted([s for s in givers if HOME.get(s)], key=lambda s: (TOWN not in HOME[s], HOME[s][0], s)), givers)
 	plan = [Step('start')]
-	for sid in sorted(town):
-		plan.append(Step('talk', sid=sid))
-	for sid in sorted(inside, key=lambda s: HOME[s][0]):
-		for a in HOME[sid]:                       # e.g. Hrothgar is baked in two areas (day/night): try each
-			plan += [Step('enter', area=a), Step('talk', sid=sid, optional=len(HOME[sid]) > 1), Step('leave', area=a)]
+	for pas in (1, 2):
+		for sid in sids:
+			plan += visit_steps(sid, pas)
 	ST['plan'] = plan
+
+def visit_steps(sid, pas):
+	steps = []
+	for a in (TOWN in HOME[sid] and [TOWN] or HOME[sid]):  # e.g. Hrothgar is baked in two areas (day/night): try each
+		talk = Step('talk', sid=sid, optional=len(HOME[sid]) > 1, pas=pas)
+		steps += a == TOWN and [talk] or [Step('enter', area=a, pas=pas, sid=sid), talk, Step('leave', area=a, pas=pas, sid=sid)]
+	return steps
+
+def open_quests(sid):
+	return [q for v in ST['givers'][sid]['quests'].values() for _, q in v if game.quests[q].state not in (qs_mentioned, qs_accepted, qs_completed)]
 
 def tick_start(st):
 	'''be in the town (AR1000) first; a save elsewhere is teleported to the town's first entrance (anomaly)'''
@@ -189,6 +242,8 @@ def tick_enter(st):
 			game.scroll_to(ic.location); st.ic = ic
 	elif st.n == 10:
 		click_on_obj(st.ic); log('CLICK icon to %s at %s' % (st.area, _loc(st.ic)))
+	elif st.n % 25 == 0 and st.n < 150 and getattr(st, 'ic', None):
+		log('  wait icon: leader %s icon %s dist %.1f' % (_loc(game.leader), _loc(st.ic), game.leader.distance_to(st.ic)))
 	elif st.n == 150:
 		anomaly('icon click to %s did not change the map: teleport' % st.area)
 		m, (x, y) = st.fb; game.fade_and_teleport(0, 0, 0, m, x, y)
@@ -207,6 +262,8 @@ def tick_leave(st):
 			game.scroll_to(ic.location); st.ic = ic
 	elif st.n == 10:
 		click_on_obj(st.ic); log('CLICK exit icon of %s at %s' % (st.area, _loc(st.ic)))
+	elif st.n % 25 == 0 and st.n < 150 and getattr(st, 'ic', None):
+		log('  wait icon: leader %s icon %s dist %.1f' % (_loc(game.leader), _loc(st.ic), game.leader.distance_to(st.ic)))
 	elif st.n == 150:
 		anomaly('exit icon click in %s did not change the map: teleport' % st.area)
 		m, (x, y) = st.fb; game.fade_and_teleport(0, 0, 0, m, x, y)
@@ -229,6 +286,8 @@ def tick_talk(st):
 		game.scroll_to(st.npc.location)
 	elif st.n == 10:
 		click_on_obj(st.npc); log('CLICK %s at %s' % (g['ident'], _loc(st.npc)))
+	elif st.n % 25 == 0 and st.n < 150 and not ST['cur']['talked']:
+		log('  wait %s: leader %s npc %s dist %.1f' % (g['ident'], _loc(game.leader), _loc(st.npc), game.leader.distance_to(st.npc)))
 	elif st.n == 150 and not ST['cur']['talked']:
 		anomaly('click on %s did not start the dialogue: scripted start' % g['ident'])
 		st.npc.object_script_execute(game.leader, san_dialog)
@@ -283,12 +342,28 @@ def iwd_dialog_handler(slot):
 		pick = N - 1
 	if pick is None:
 		pick = 0
+	log('REPLY %s line %d: %d replies %s -> pick %d (npc line %d)' % (ST['givers'][c['sid']]['ident'], ln, N,
+		[ds.get_npc_reply_id(i) for i in range(N)], pick, ds.get_npc_reply_id(pick)))
 	dlg_reply(pick)
 	return 1
+
+CLR = set()
+def ensure_clearance():
+	'''converted maps have path nodes but no clearance.bin: without it Temple+ only links path nodes by straight lines,
+	so long walks around buildings fail silently (the party doesn't move). IWDAP_GENCLR=1: build it for each map once.'''
+	m = get_current_map()
+	if os.environ.get('IWDAP_GENCLR') and m not in CLR:
+		CLR.add(m)
+		import debug
+		try:
+			debug.genclr(); log('CLEARANCE generated for map %d' % m)
+		except Exception, e:
+			log('CLEARANCE failed on map %d: %s' % (m, e))
 
 def gs_iwd_tour(slot):
 	if not is_ingame() or not len(game.party):
 		return 0
+	ensure_clearance()
 	if not ST['plan'] and ST['i'] == 0:
 		import ie_travel
 		try: ie_travel.start()
@@ -297,6 +372,8 @@ def gs_iwd_tour(slot):
 	if ST['i'] >= len(ST['plan']):
 		report(); return 1
 	st = ST['plan'][ST['i']]
+	if st.n == 0 and st.kind in ('enter', 'talk') and getattr(st, 'pas', 1) == 2 and not open_quests(st.sid):
+		ST['i'] += st.kind == 'enter' and 3 or 1; return 0   # (an interior visit: enter, talk, leave)                   # second pass: only givers with quests still open
 	st.n += 1
 	if st.n % 25 == 1 or os.environ.get('IWDAP_VERBOSE'):
 		log('TICK step %d/%d %s n=%d map %d dlg %d' % (ST['i'], len(ST['plan']), st.kind, st.n, get_current_map(), dlg.is_engaged()))
@@ -310,8 +387,12 @@ def gs_iwd_tour(slot):
 
 def report():
 	log('SUMMARY %d/%d quests reached, %d anomalies' % (len([r for r in ST['results'] if r[3]]), len(ST['results']), len(ST['anomalies'])))
+	seen = {}
 	for r in ST['results']:
-		log('TABLE %s | quest %d | journal %d | %s | state %d' % (r[0], r[1], r[2], r[3] and 'PASS' or 'FAIL', r[4]))
+		seen[(r[0], r[1])] = r
+	for (who, q), r in sorted(seen.items()):
+		st = game.quests[q].state
+		log('TABLE %s | quest %d | journal %d | %s | state %d' % (who, q, r[2], st in (qs_mentioned, qs_accepted, qs_completed) and 'PASS' or 'FAIL', st))
 	log('DONE')
 
 def gs_idle_forever(slot):
