@@ -133,10 +133,22 @@ def dist_to_goal(npc, to, goals):
 #endregion
 
 #region world helpers
+AIM = [(0, 0), (-1, -1), (-1, 0), (0, -1), (-2, -2), (-2, -1), (-1, -2), (1, 1), (-3, -3)]
+
 def click_on_obj(o):
-	'''engine-side hover + click on the object's tile (no OS cursor: works on a headless/unfocused display)'''
-	game.mouse_move_to(o.location)
-	game.mouse_click()
+	'''engine-side hover + click (no OS cursor: works on a headless/unfocused display). The click goes to whatever is
+	drawn topmost under the cursor (a building sprite, a party member standing on the NPC...), so aim at the tile and,
+	if game.hovered is something else, at nearby tiles (screen-up first: sprites extend upwards) until o is hovered.'''
+	x, y = location_to_axis(o.location); seen = []
+	for dx, dy in AIM:
+		game.mouse_move_to(location_from_axis(x + dx, y + dy))
+		h = game.hovered
+		if h == o:
+			game.mouse_click()
+			return 'hit at offset %s%s' % ((dx, dy), seen and ' (blocked by %s)' % seen[0] or '')
+		seen.append(h != OBJ_HANDLE_NULL and str(h) or 'nothing')
+	game.mouse_move_to(o.location); game.mouse_click()
+	return 'MISSED, hovered %s' % seen
 
 def _loc(o):
 	return location_to_axis(o.location)
@@ -241,7 +253,7 @@ def tick_enter(st):
 		else:
 			game.scroll_to(ic.location); st.ic = ic
 	elif st.n == 10:
-		click_on_obj(st.ic); log('CLICK icon to %s at %s' % (st.area, _loc(st.ic)))
+		r = click_on_obj(st.ic); log('CLICK icon to %s at %s: %s' % (st.area, _loc(st.ic), r))
 	elif st.n % 25 == 0 and st.n < 150 and getattr(st, 'ic', None):
 		log('  wait icon: leader %s icon %s dist %.1f' % (_loc(game.leader), _loc(st.ic), game.leader.distance_to(st.ic)))
 	elif st.n == 150:
@@ -261,7 +273,7 @@ def tick_leave(st):
 		else:
 			game.scroll_to(ic.location); st.ic = ic
 	elif st.n == 10:
-		click_on_obj(st.ic); log('CLICK exit icon of %s at %s' % (st.area, _loc(st.ic)))
+		r = click_on_obj(st.ic); log('CLICK exit icon of %s at %s: %s' % (st.area, _loc(st.ic), r))
 	elif st.n % 25 == 0 and st.n < 150 and getattr(st, 'ic', None):
 		log('  wait icon: leader %s icon %s dist %.1f' % (_loc(game.leader), _loc(st.ic), game.leader.distance_to(st.ic)))
 	elif st.n == 150:
@@ -275,6 +287,15 @@ def tick_talk(st):
 	g = ST['givers'][st.sid]
 	if st.n == 1:
 		st.npc = find_npc(st.sid)
+		if st.npc == OBJ_HANDLE_NULL and not getattr(st, 'scan', None):
+			import ie_travel_data as D            # only loaded sectors are listed: look around the area's entrances
+			a = area_of_map(get_current_map())
+			st.scan = [e[:2] for _, e in sorted(D.AREAS[a]['entrances'].items())] if a in D.AREAS else []
+		while st.npc == OBJ_HANDLE_NULL and st.scan:
+			e = st.scan.pop(0); game.scroll_to(location_from_axis(e[0], e[1]))
+			for o in game.obj_list_range(location_from_axis(e[0], e[1]), 60, OLC_NPC):
+				if o.scripts[san_dialog] == st.sid and not o.is_unconscious():
+					st.npc = o; log('  found %s near %s' % (g['ident'], e)); break
 		if st.npc == OBJ_HANDLE_NULL:
 			if getattr(st, 'optional', 0):
 				log('TALK %s not in %s (optional)' % (g['ident'], area_of_map(get_current_map()))); return 1
@@ -285,7 +306,7 @@ def tick_talk(st):
 		             'hit': [], 'talked': 0}
 		game.scroll_to(st.npc.location)
 	elif st.n == 10:
-		click_on_obj(st.npc); log('CLICK %s at %s' % (g['ident'], _loc(st.npc)))
+		r = click_on_obj(st.npc); log('CLICK %s at %s: %s' % (g['ident'], _loc(st.npc), r))
 	elif st.n % 25 == 0 and st.n < 150 and not ST['cur']['talked']:
 		log('  wait %s: leader %s npc %s dist %.1f' % (g['ident'], _loc(game.leader), _loc(st.npc), game.leader.distance_to(st.npc)))
 	elif st.n == 150 and not ST['cur']['talked']:
@@ -350,7 +371,7 @@ def iwd_dialog_handler(slot):
 CLR = set()
 def ensure_clearance():
 	'''converted maps have path nodes but no clearance.bin: without it Temple+ only links path nodes by straight lines,
-	so long walks around buildings fail silently (the party doesn't move). IWDAP_GENCLR=1: build it for each map once.'''
+	so long walks around buildings fail silently (the party doesn't move). IWDAP_GENCLR=1: build it for each map once (experimental: run fx2 crashed on the next map change, and it did not fix the AR1001 icon).'''
 	m = get_current_map()
 	if os.environ.get('IWDAP_GENCLR') and m not in CLR:
 		CLR.add(m)
