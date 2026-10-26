@@ -7,6 +7,13 @@ autoplayer = None #type: Autoplayer
 def play_new_game():
     print('gonna play a new game')
     #controllers.UiController.start_ui_thread()
+    import os
+    if os.environ.get('AUTOPLAYER_SCENARIO') == 'easthaven': # ie2toee Icewind Dale conversion (see scr/iwd_easthaven_controller.py)
+        import iwd_easthaven_controller
+        global autoplayer
+        autoplayer = playtester.Playtester()
+        iwd_easthaven_controller.setup_playtester(autoplayer)
+        return
     import new_game_controller
     global autoplayer
     autoplayer = playtester.Playtester()
