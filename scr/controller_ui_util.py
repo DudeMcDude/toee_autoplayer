@@ -308,3 +308,82 @@ def scroll_to(loc, y = None):
         loc = location_from_axis(x,y)
     game.scroll_to(loc)
     return
+
+#region verified clicks
+# Before a click, check that the mouse state will do what the caller intends: the engine's picker (game.hovered)
+# returns the intended object and the action the game would take on it (talk / attack / jump / use / pickup / walk)
+# matches. On a mismatch, log what is under the cursor and nudge the aim (screen pixels first: sprites extend
+# upwards, then nearby tiles). If nothing works, log an anomaly and fall back (default: click the object's tile).
+# Limits: the engine exposes no cursor-type getter to Python, so the action is inferred from the hovered object the
+# same way the game picks its cursor; game.hovered picks with GRF_HITTEST_3D, which may differ from the click
+# handler's own pick for some object types.
+PIXEL_NUDGES = [(0, 0), (0, -10), (0, -20), (-10, -10), (10, -10), (0, -30), (-15, 0), (15, 0), (0, 10), (0, -45)]
+TILE_NUDGES = [(-1, -1), (-1, 0), (0, -1), (-2, -2), (1, 1), (-3, -3)]
+
+def mouse_action_for(h):
+    '''the action a left click on hovered object h would take (inferred; see the region note)'''
+    if h == OBJ_HANDLE_NULL:
+        return 'walk'
+    t = h.type
+    if t in (obj_t_npc, obj_t_pc):
+        if h in game.party:
+            return 'select'
+        try:
+            if h.is_unconscious():
+                return 'loot'
+            # is_friendly() is only true for allies; neutral townsfolk get the talk cursor out of combat
+            if game.leader.is_friendly(h) or not game.combat_is_active():
+                return 'talk'
+            return 'attack'
+        except Exception:
+            return 'talk'
+    if t == obj_t_scenery:
+        try:
+            if h.obj_get_int(obj_f_scenery_teleport_to):
+                return 'jump'
+        except Exception:
+            pass
+        return 'use'
+    if t in (obj_t_portal, obj_t_container):
+        return 'use'
+    return 'pickup'
+
+def describe_hovered(h):
+    if h == OBJ_HANDLE_NULL:
+        return 'nothing'
+    try:
+        return '%s@%s' % (h, location_to_axis(h.location))
+    except Exception:
+        return str(h)
+
+def verified_click(obj, action=None, log=None, fallback='click', rightclick=0):
+    '''Aim at obj until the picker returns it and the inferred action is `action` (None: any), then click.
+    Returns (ok, message). fallback: 'click' clicks the object's tile anyway, None does not click.'''
+    def _log(s):
+        if log: log(s)
+    seen = []
+    try:
+        cx, cy = tpgui.world_to_screen(obj.location_full)
+        cands = [('px', dx, dy) for dx, dy in PIXEL_NUDGES]
+    except Exception:
+        cx = cy = None; cands = [('px', 0, 0)]
+    ox, oy = location_to_axis(obj.location)
+    cands += [('tile', dx, dy) for dx, dy in TILE_NUDGES]
+    for kind, dx, dy in cands:
+        if kind == 'px' and cx is not None:
+            game.mouse_move_to((int(cx + dx), int(cy + dy)), 1)
+        else:
+            game.mouse_move_to(location_from_axis(ox + dx, oy + dy) if kind == 'tile' else obj.location)
+        h = game.hovered; a = mouse_action_for(h)
+        if h == obj and (action is None or a == action):
+            game.mouse_click(rightclick)
+            msg = 'verified %s at %s %s' % (a, kind, (dx, dy))
+            if seen: msg += ' (first under cursor: %s)' % seen[0]
+            return True, msg
+        seen.append('%s/%s' % (describe_hovered(h), a))
+    _log('ANOMALY click on %s (want %s): never under the cursor; saw %s' % (describe_hovered(obj), action, seen[:6]))
+    if fallback == 'click':
+        game.mouse_move_to(obj.location); game.mouse_click(rightclick)
+        return False, 'UNVERIFIED fallback click; saw %s' % seen[:4]
+    return False, 'not clicked; saw %s' % seen[:4]
+#endregion

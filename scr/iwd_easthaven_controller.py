@@ -133,22 +133,11 @@ def dist_to_goal(npc, to, goals):
 #endregion
 
 #region world helpers
-AIM = [(0, 0), (-1, -1), (-1, 0), (0, -1), (-2, -2), (-2, -1), (-1, -2), (1, 1), (-3, -3)]
-
-def click_on_obj(o):
-	'''engine-side hover + click (no OS cursor: works on a headless/unfocused display). The click goes to whatever is
-	drawn topmost under the cursor (a building sprite, a party member standing on the NPC...), so aim at the tile and,
-	if game.hovered is something else, at nearby tiles (screen-up first: sprites extend upwards) until o is hovered.'''
-	x, y = location_to_axis(o.location); seen = []
-	for dx, dy in AIM:
-		game.mouse_move_to(location_from_axis(x + dx, y + dy))
-		h = game.hovered
-		if h == o:
-			game.mouse_click()
-			return 'hit at offset %s%s' % ((dx, dy), seen and ' (blocked by %s)' % seen[0] or '')
-		seen.append(h != OBJ_HANDLE_NULL and str(h) or 'nothing')
-	game.mouse_move_to(o.location); game.mouse_click()
-	return 'MISSED, hovered %s' % seen
+def click_on_obj(o, action=None):
+	'''pre-click verification lives in controller_ui_util.verified_click (generic for all controllers)'''
+	import controller_ui_util as cu
+	ok, msg = cu.verified_click(o, action, log)
+	return msg
 
 def _loc(o):
 	return location_to_axis(o.location)
@@ -253,7 +242,9 @@ def tick_enter(st):
 		else:
 			game.scroll_to(ic.location); st.ic = ic
 	elif st.n == 10:
-		r = click_on_obj(st.ic); log('CLICK icon to %s at %s: %s' % (st.area, _loc(st.ic), r))
+		st.click_from = _loc(game.leader); r = click_on_obj(st.ic, 'jump'); log('CLICK icon to %s at %s: %s' % (st.area, _loc(st.ic), r))
+	elif st.n == 60 and getattr(st, 'ic', None) and _loc(game.leader) == getattr(st, 'click_from', None):
+		st.click_from = _loc(game.leader); r = click_on_obj(st.ic, 'jump'); log('RECLICK %s icon (leader has not moved from %s): %s' % (st.area, st.click_from, r))
 	elif st.n % 25 == 0 and st.n < 150 and getattr(st, 'ic', None):
 		log('  wait icon: leader %s icon %s dist %.1f' % (_loc(game.leader), _loc(st.ic), game.leader.distance_to(st.ic)))
 	elif st.n == 150:
@@ -273,7 +264,9 @@ def tick_leave(st):
 		else:
 			game.scroll_to(ic.location); st.ic = ic
 	elif st.n == 10:
-		r = click_on_obj(st.ic); log('CLICK exit icon of %s at %s: %s' % (st.area, _loc(st.ic), r))
+		st.click_from = _loc(game.leader); r = click_on_obj(st.ic, 'jump'); log('CLICK exit icon of %s at %s: %s' % (st.area, _loc(st.ic), r))
+	elif st.n == 60 and getattr(st, 'ic', None) and _loc(game.leader) == getattr(st, 'click_from', None):
+		st.click_from = _loc(game.leader); r = click_on_obj(st.ic, 'jump'); log('RECLICK %s icon (leader has not moved from %s): %s' % (st.area, st.click_from, r))
 	elif st.n % 25 == 0 and st.n < 150 and getattr(st, 'ic', None):
 		log('  wait icon: leader %s icon %s dist %.1f' % (_loc(game.leader), _loc(st.ic), game.leader.distance_to(st.ic)))
 	elif st.n == 150:
@@ -287,15 +280,19 @@ def tick_talk(st):
 	g = ST['givers'][st.sid]
 	if st.n == 1:
 		st.npc = find_npc(st.sid)
-		if st.npc == OBJ_HANDLE_NULL and not getattr(st, 'scan', None):
+		if st.npc == OBJ_HANDLE_NULL and getattr(st, 'scan', None) is None:
 			import ie_travel_data as D            # only loaded sectors are listed: look around the area's entrances
 			a = area_of_map(get_current_map())
 			st.scan = [e[:2] for _, e in sorted(D.AREAS[a]['entrances'].items())] if a in D.AREAS else []
-		while st.npc == OBJ_HANDLE_NULL and st.scan:
-			e = st.scan.pop(0); game.scroll_to(location_from_axis(e[0], e[1]))
+			st.scanned = None
+		if st.npc == OBJ_HANDLE_NULL and st.scanned:   # sectors around the last scroll target are loaded by now
+			e = st.scanned
 			for o in game.obj_list_range(location_from_axis(e[0], e[1]), 60, OLC_NPC):
 				if o.scripts[san_dialog] == st.sid and not o.is_unconscious():
 					st.npc = o; log('  found %s near %s' % (g['ident'], e)); break
+		if st.npc == OBJ_HANDLE_NULL and st.scan:      # scroll there and look again in a few ticks
+			st.scanned = st.scan.pop(0); game.scroll_to(location_from_axis(st.scanned[0], st.scanned[1]))
+			st.n = -5; return 0
 		if st.npc == OBJ_HANDLE_NULL:
 			if getattr(st, 'optional', 0):
 				log('TALK %s not in %s (optional)' % (g['ident'], area_of_map(get_current_map()))); return 1
@@ -306,7 +303,7 @@ def tick_talk(st):
 		             'hit': [], 'talked': 0}
 		game.scroll_to(st.npc.location)
 	elif st.n == 10:
-		r = click_on_obj(st.npc); log('CLICK %s at %s: %s' % (g['ident'], _loc(st.npc), r))
+		r = click_on_obj(st.npc, 'talk'); log('CLICK %s at %s: %s' % (g['ident'], _loc(st.npc), r))
 	elif st.n % 25 == 0 and st.n < 150 and not ST['cur']['talked']:
 		log('  wait %s: leader %s npc %s dist %.1f' % (g['ident'], _loc(game.leader), _loc(st.npc), game.leader.distance_to(st.npc)))
 	elif st.n == 150 and not ST['cur']['talked']:
