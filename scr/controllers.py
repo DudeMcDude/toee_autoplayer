@@ -478,6 +478,9 @@ class ControllerBase:
         # print('Controller execute()')
         if not self.__active__:
             return
+        if not len(self.__goal_slot__.goal_stack): # every scheme finished: stop ticking
+            print('Controller: goal stack empty, stopping')
+            return
             
         if not tpgui.game_is_focused():
             self.schedule(100)
