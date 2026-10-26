@@ -278,6 +278,8 @@ def tick_leave(st):
 
 def tick_talk(st):
 	g = ST['givers'][st.sid]
+	if st.n < 1:            # waiting for scrolled-to sectors (the scan sets n = -5): nothing set up yet
+		return 0
 	if st.n == 1:
 		st.npc = find_npc(st.sid)
 		if st.npc == OBJ_HANDLE_NULL and getattr(st, 'scan', None) is None:
