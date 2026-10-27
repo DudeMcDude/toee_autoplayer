@@ -143,7 +143,8 @@ def _loc(o):
 	return location_to_axis(o.location)
 
 def find_npc(sid):
-	for o in game.obj_list_range(game.leader.location, 200, OLC_NPC):
+	# (obj_list_range radius is not in tiles: 200 missed Elisia ~100 tiles east of the Easthaven start; 300 reaches her)
+	for o in game.obj_list_range(game.leader.location, 300, OLC_NPC):
 		if o.scripts[san_dialog] == sid and not o.is_unconscious() and o not in game.party:
 			return o
 	return OBJ_HANDLE_NULL
