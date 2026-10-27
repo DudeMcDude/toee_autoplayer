@@ -149,8 +149,8 @@ def find_npc(sid):
 			return o
 	return OBJ_HANDLE_NULL
 
-def exit_icons():
-	return [o for o in game.obj_list_range(game.leader.location, 200, OLC_SCENERY) if o.obj_get_int(obj_f_scenery_teleport_to)]
+def exit_icons(loc=None):
+	return [o for o in game.obj_list_range(loc or game.leader.location, 200, OLC_SCENERY) if o.obj_get_int(obj_f_scenery_teleport_to)]
 
 def region_center(r):
 	p = r['poly']
@@ -161,9 +161,9 @@ def icon_for(area, dest_area):
 	import ie_travel_data as D
 	r = [r for r in D.AREAS[area]['regions'] if r['dest_area'] == dest_area][0]
 	ent = D.AREAS[dest_area]['entrances'][r['dest_entrance']]
-	cx, cy = region_center(r)
-	best, bd = OBJ_HANDLE_NULL, 1e9
-	for o in exit_icons():
+	cx, cy = r.get('anchor') or region_center(r)   # the icon sits at the anchor: search around it, not around the leader
+	best, bd = OBJ_HANDLE_NULL, 1e9                 # (from far away the leader-centred list missed AR1001's icon -> AR1014's)
+	for o in exit_icons(location_from_axis(int(cx), int(cy))):
 		x, y = _loc(o); d = (x - cx) ** 2 + (y - cy) ** 2
 		if d < bd:
 			best, bd = o, d
@@ -223,13 +223,13 @@ def open_quests(sid):
 	return [q for v in ST['givers'][sid]['quests'].values() for _, q in v if game.quests[q].state not in (qs_mentioned, qs_accepted, qs_completed)]
 
 def tick_start(st):
-	'''be in the town (AR1000) first; a save elsewhere is teleported to the town's first entrance (anomaly)'''
+	'''be in the town (AR1000) first; a save elsewhere is teleported to the town's first entrance (expected with the vanilla harness save, not an anomaly)'''
 	import ie_travel_data as D
 	if get_current_map() == D.AREAS[TOWN]['map']:
 		return st.n > 20
 	if st.n == 1:
 		e = sorted(D.AREAS[TOWN]['entrances'].items())[0][1]
-		anomaly('start map %d is not the town: teleport to %s' % (get_current_map(), e[:2]))
+		log('start map %d (the harness loads a vanilla save): teleport into the town at %s' % (get_current_map(), e[:2]))
 		game.fade_and_teleport(0, 0, 0, D.AREAS[TOWN]['map'], e[0], e[1])
 	return st.n > 300
 
@@ -305,7 +305,13 @@ def tick_talk(st):
 		ST['cur'] = {'sid': st.sid, 'goals': goals, 'dist': dist_to_goal(npc, to, goals), 'visits': {}, 'replies': 0,
 		             'hit': [], 'talked': 0}
 		game.scroll_to(st.npc.location)
-	elif st.n == 10:
+	elif st.n == 5:
+		lx, ly = location_to_axis(game.leader.location); nx, ny = location_to_axis(st.npc.location)
+		if max(abs(lx - nx), abs(ly - ny)) > 40:   # engine path search gives up past ~40 tiles (path length out of range,
+			# node fallback fails): move the party next to the NPC first, then click as a player would
+			log('APPROACH %s: leader %s is %d tiles away, moving next to the NPC' % (g['ident'], (lx, ly), max(abs(lx - nx), abs(ly - ny))))
+			game.fade_and_teleport(0, 0, 0, get_current_map(), nx + 4, ny + 4)
+	elif st.n == 20:
 		r = click_on_obj(st.npc, 'talk'); log('CLICK %s at %s: %s' % (g['ident'], _loc(st.npc), r))
 	elif st.n % 25 == 0 and st.n < 150 and not ST['cur']['talked']:
 		log('  wait %s: leader %s npc %s dist %.1f' % (g['ident'], _loc(game.leader), _loc(st.npc), game.leader.distance_to(st.npc)))
