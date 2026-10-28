@@ -193,6 +193,36 @@ def locate_givers(givers):
 def anomaly(s):
 	log('ANOMALY ' + s); ST['anomalies'].append(s)
 
+# walk timeouts (ticks of ~100 ms): a step gives up at its timeout unless the leader is still getting closer to (or
+# moving towards) the target, then it is extended by WALK_EXTEND at a time, at most WALK_CAP ticks past the timeout.
+WALK_TIMEOUT = 150; WALK_EXTEND = 50; WALK_CAP = 450
+# per-step overrides: 'kind:AREA' (enter/leave), 'talk:<giver ident>' or 'quest:<id>' (the largest that applies wins)
+TIMEOUTS = {}
+
+def step_timeout(kind, area=None, sid=None):
+	t = [TIMEOUTS.get('%s:%s' % (kind, area))]
+	if sid is not None:
+		g = ST['givers'][sid]
+		t += [TIMEOUTS.get('talk:%s' % g['ident'])] + [TIMEOUTS.get('quest:%d' % q) for v in g['quests'].values() for _, q in v]
+	t = [x for x in t if x]
+	return t and max(t) or WALK_TIMEOUT
+
+def walk_due(st, target):
+	'''call once per tick: True on the tick the step's walk timeout runs out (extended while the leader makes progress)'''
+	if not hasattr(st, 'dl'):
+		st.dl = getattr(st, 'timeout', WALK_TIMEOUT); st.dl0 = st.dl; st.snap = None
+	if st.n % 25 == 0 and st.n > 0:
+		pos = _loc(game.leader); d = target and target != OBJ_HANDLE_NULL and game.leader.distance_to(target) or 0
+		st.moving = st.snap is not None and (d < st.snap[1] - 0.5 or (pos != st.snap[0] and d <= st.snap[1] + 0.5))
+		st.snap = (pos, d)
+	if st.n != st.dl:
+		return False
+	if getattr(st, 'moving', 0) and st.dl + WALK_EXTEND <= st.dl0 + WALK_CAP:
+		st.dl += WALK_EXTEND
+		log('EXTEND %s %s timeout to %d ticks: leader %s still closing in (dist %.1f)' % (st.kind, getattr(st, 'area', '') or st.sid, st.dl, st.snap[0], st.snap[1]))
+		return False
+	return True
+
 class Step:  # tiny state holder per tick-driven task
 	def __init__(self, kind, **kw):
 		self.kind = kind; self.n = 0; self.__dict__.update(kw)
@@ -215,8 +245,9 @@ def build_plan():
 def visit_steps(sid, pas):
 	steps = []
 	for a in (TOWN in HOME[sid] and [TOWN] or HOME[sid]):  # e.g. Hrothgar is baked in two areas (day/night): try each
-		talk = Step('talk', sid=sid, optional=len(HOME[sid]) > 1, pas=pas)
-		steps += a == TOWN and [talk] or [Step('enter', area=a, pas=pas, sid=sid), talk, Step('leave', area=a, pas=pas, sid=sid)]
+		talk = Step('talk', sid=sid, optional=len(HOME[sid]) > 1, pas=pas, timeout=step_timeout('talk', sid=sid))
+		steps += a == TOWN and [talk] or [Step('enter', area=a, pas=pas, sid=sid, timeout=step_timeout('enter', a, sid)), talk,
+		                                  Step('leave', area=a, pas=pas, sid=sid, timeout=step_timeout('leave', a, sid))]
 	return steps
 
 def open_quests(sid):
@@ -234,51 +265,54 @@ def tick_start(st):
 	return st.n > 300
 
 def tick_enter(st):
+	due = walk_due(st, getattr(st, 'ic', None))
 	if area_of_map(get_current_map()) == st.area:
 		log('ENTER %s ok after %d ticks' % (st.area, st.n)); return 1
 	if st.n == 1:
 		ic, st.fb = icon_for(TOWN, st.area)
 		if ic == OBJ_HANDLE_NULL:
-			anomaly('no exit icon to %s near the party' % st.area); st.n = 150
+			anomaly('no exit icon to %s near the party' % st.area); st.n = st.dl - 1; st.dl0 = st.dl - WALK_CAP
 		else:
 			game.scroll_to(ic.location); st.ic = ic
 	elif st.n == 10:
 		st.click_from = _loc(game.leader); r = click_on_obj(st.ic, 'jump'); log('CLICK icon to %s at %s: %s' % (st.area, _loc(st.ic), r))
 	elif st.n == 60 and getattr(st, 'ic', None) and _loc(game.leader) == getattr(st, 'click_from', None):
 		st.click_from = _loc(game.leader); r = click_on_obj(st.ic, 'jump'); log('RECLICK %s icon (leader has not moved from %s): %s' % (st.area, st.click_from, r))
-	elif st.n % 25 == 0 and st.n < 150 and getattr(st, 'ic', None):
+	elif st.n % 25 == 0 and st.n < st.dl and getattr(st, 'ic', None):
 		log('  wait icon: leader %s icon %s dist %.1f' % (_loc(game.leader), _loc(st.ic), game.leader.distance_to(st.ic)))
-	elif st.n == 150:
+	elif due:
 		anomaly('icon click to %s did not change the map: teleport' % st.area)
 		m, (x, y) = st.fb; game.fade_and_teleport(0, 0, 0, m, x, y)
-	elif st.n > 300:
+	elif st.n > st.dl + 150:
 		anomaly('could not reach %s' % st.area); return 1
 	return 0
 
 def tick_leave(st):
+	due = walk_due(st, getattr(st, 'ic', None))
 	if get_current_map() == 5900:
 		log('LEAVE %s ok after %d ticks' % (st.area, st.n)); return 1
 	if st.n == 1:
 		ic, st.fb = icon_for(st.area, TOWN)
 		if ic == OBJ_HANDLE_NULL:
-			anomaly('no exit icon in %s' % st.area); st.n = 150
+			anomaly('no exit icon in %s' % st.area); st.n = st.dl - 1; st.dl0 = st.dl - WALK_CAP
 		else:
 			game.scroll_to(ic.location); st.ic = ic
 	elif st.n == 10:
 		st.click_from = _loc(game.leader); r = click_on_obj(st.ic, 'jump'); log('CLICK exit icon of %s at %s: %s' % (st.area, _loc(st.ic), r))
 	elif st.n == 60 and getattr(st, 'ic', None) and _loc(game.leader) == getattr(st, 'click_from', None):
 		st.click_from = _loc(game.leader); r = click_on_obj(st.ic, 'jump'); log('RECLICK %s icon (leader has not moved from %s): %s' % (st.area, st.click_from, r))
-	elif st.n % 25 == 0 and st.n < 150 and getattr(st, 'ic', None):
+	elif st.n % 25 == 0 and st.n < st.dl and getattr(st, 'ic', None):
 		log('  wait icon: leader %s icon %s dist %.1f' % (_loc(game.leader), _loc(st.ic), game.leader.distance_to(st.ic)))
-	elif st.n == 150:
+	elif due:
 		anomaly('exit icon click in %s did not change the map: teleport' % st.area)
 		m, (x, y) = st.fb; game.fade_and_teleport(0, 0, 0, m, x, y)
-	elif st.n > 300:
+	elif st.n > st.dl + 150:
 		anomaly('could not leave %s' % st.area); return 1
 	return 0
 
 def tick_talk(st):
 	g = ST['givers'][st.sid]
+	due = st.n >= 1 and walk_due(st, getattr(st, 'npc', None))
 	if st.n < 1:            # waiting for scrolled-to sectors (the scan sets n = -5): nothing set up yet
 		return 0
 	if st.n == 1:
@@ -313,12 +347,12 @@ def tick_talk(st):
 			game.fade_and_teleport(0, 0, 0, get_current_map(), nx + 4, ny + 4)
 	elif st.n == 20:
 		r = click_on_obj(st.npc, 'talk'); log('CLICK %s at %s: %s' % (g['ident'], _loc(st.npc), r))
-	elif st.n % 25 == 0 and st.n < 150 and not ST['cur']['talked']:
+	elif st.n % 25 == 0 and st.n < st.dl and not ST['cur']['talked']:
 		log('  wait %s: leader %s npc %s dist %.1f' % (g['ident'], _loc(game.leader), _loc(st.npc), game.leader.distance_to(st.npc)))
-	elif st.n == 150 and not ST['cur']['talked']:
+	elif due and not ST['cur']['talked']:
 		anomaly('click on %s did not start the dialogue: scripted start' % g['ident'])
 		st.npc.object_script_execute(game.leader, san_dialog)
-	elif st.n > 150 and not dlg.is_engaged() and (ST['cur']['talked'] or st.n > 300):
+	elif st.n > st.dl and not dlg.is_engaged() and (ST['cur']['talked'] or st.n > st.dl + 150):
 		finish_talk(st, 1); return 1
 	return 0
 
