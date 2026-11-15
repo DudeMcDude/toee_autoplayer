@@ -1,6 +1,7 @@
 '''
-IWD Easthaven (ie2toee) quest-giver scenario.  Enabled with env AUTOPLAYER_SCENARIO=easthaven (see
-templeplus/autoplayer.py); start from the Easthaven new-game save (TP_AUTOLOAD).
+IWD Easthaven / IWD2 Targos (ie2toee) quest-giver scenarios.  Enabled with env AUTOPLAYER_SCENARIO=easthaven or
+targos (see templeplus/autoplayer.py); the harness loads a save (TP_AUTOLOAD) and the tour teleports into the town.
+The scenario only differs in its town area (SCENARIOS); everything else comes from the converted module.
 
 Everything is data driven from the converted module (no hand-written routes or dialogue line numbers):
   * ie_travel_data.AREAS   - maps, exit regions and entrances (finds the exit icons / teleport fallbacks)
@@ -19,9 +20,36 @@ from utilities import location_from_axis, location_to_axis
 import gamedialog as dlg
 import os, re
 
-CORE = os.environ.get('IE2TOEE_CORE', '')       # the module's ToEE_core dir (host path, e.g. Z:/.../modules/ToEE_core)
+CORE = os.environ.get('IE2TOEE_CORE', '')       # the module's _core dir (e.g. Z:/.../modules/IWD_core); unset: found from ie_journal
 LOG = os.environ.get('IWDAP_LOG', '')
-TOWN = 'AR1000'
+# scenario -> town area (ie_travel_data key) and scheme name. IWD's area keys are ARnnnn, IWD2's I2ARnnnn.
+# travel 'hub': every interior visit is enter-from-town, talk, leave-to-town (Easthaven, as validated in Oct);
+# 'route': goto steps that walk hop by hop from wherever the party is (Targos: AR1000 -> AR1100 -> AR1200 -> AR1201)
+SCENARIOS = {'easthaven': {'town': 'AR1000', 'scheme': 'iwd_easthaven', 'travel': 'hub'},
+             'targos': {'town': 'I2AR1000', 'scheme': 'iwd2_targos', 'travel': 'route'}}
+SCENARIO = os.environ.get('AUTOPLAYER_SCENARIO', 'easthaven')
+if SCENARIO not in SCENARIOS:
+	SCENARIO = 'easthaven'
+TOWN = SCENARIOS[SCENARIO]['town']
+
+def configure(name):
+	global SCENARIO, TOWN
+	SCENARIO = name; TOWN = SCENARIOS[name]['town']
+
+def find_core():
+	'''the converted module's _core dir: $IE2TOEE_CORE, else the folder holding the loose ie_journal.py (its parent),
+	so a native Windows run needs no host path'''
+	global CORE
+	if CORE and os.path.isdir(os.path.join(CORE, 'scr')):
+		return CORE
+	try:
+		import ie_journal
+		d = os.path.dirname(os.path.dirname(os.path.abspath(ie_journal.__file__)))
+		if os.path.isdir(os.path.join(d, 'scr')) and os.path.isdir(os.path.join(d, 'dlg')):
+			CORE = d
+	except Exception as e:
+		log('find_core: %s' % e)
+	return CORE
 
 def log(s):
 	print('IWDAP ' + s)
@@ -50,7 +78,7 @@ def load_quest_givers():
 		src = open(os.path.join(d, n)).read()
 		quests = {}
 		for fm in re.finditer(r'def ie_a(\d+)\(npc, pc\):\n(.*)', src):
-			for sr in re.findall(r'AddJournalEntry\(c, (\d+), "QUEST"\)', fm.group(2)):
+			for sr in re.findall(r'AddJournalEntry\(c, (\d+), "QUEST"\)', fm.group(2)) + re.findall(QUEST_KW, fm.group(2)):
 				sr = int(sr)
 				if sr in J and J[sr][1] == 'quest':
 					quests.setdefault(int(fm.group(1)), []).append((sr, J[sr][0]))
@@ -58,6 +86,7 @@ def load_quest_givers():
 			res[int(m.group(1))] = {'ident': m.group(2), 'quests': quests}
 	return res
 
+QUEST_KW = r"journal=\((\d+), 'quest'\)"   # dlg_do(..., journal=(strref, 'quest')): the reply adds a quest entry
 GLOB_RE = r'T\.(Global|GlobalGT|GlobalLT)\(c, "(\w+)", "GLOBAL", (\d+)\)'
 
 def load_flag_deps(givers):
@@ -99,6 +128,7 @@ def flag_order(sids, givers):
 			if ia > ib:
 				order.insert(ib, order.pop(ia)); moved = 1
 		if not moved: break
+	ORDER_DEPS.clear(); ORDER_DEPS.update(before)
 	for a, b in sorted(before):
 		log('ORDER %s before %s' % (givers[a]['ident'], givers[b]['ident']))
 	return order
@@ -142,12 +172,38 @@ def click_on_obj(o, action=None):
 def _loc(o):
 	return location_to_axis(o.location)
 
+def is_hidden(o):
+	return o.object_flags_get() & OF_OFF   # IE creatures that start hidden (IWD2 CRE 0x29c) are baked OF_OFF
+
+HIDDEN = {}   # script id -> hidden objects seen (reported as SKIP, not as a missing giver)
+
 def find_npc(sid):
 	# (obj_list_range radius is not in tiles: 200 missed Elisia ~100 tiles east of the Easthaven start; 300 reaches her)
 	for o in game.obj_list_range(game.leader.location, 300, OLC_NPC):
 		if o.scripts[san_dialog] == sid and not o.is_unconscious() and o not in game.party:
+			if is_hidden(o):
+				HIDDEN[sid] = HIDDEN.get(sid, 0) + 1; continue
 			return o
 	return OBJ_HANDLE_NULL
+
+def route(src, dst):
+	'''shortest list of areas from src (excluded) to dst over the exit regions of ie_travel_data (converted areas only)'''
+	import ie_travel_data as D
+	prev, frontier = {src: None}, [src]
+	while frontier:
+		a = frontier.pop(0)
+		if a == dst:
+			break
+		for r in D.AREAS[a]['regions']:
+			b = r['dest_area']
+			if b in D.AREAS and b not in prev:
+				prev[b] = a; frontier.append(b)
+	if dst not in prev:
+		return None
+	path, a = [], dst
+	while a != src:
+		path.insert(0, a); a = prev[a]
+	return path
 
 def exit_icons(loc=None):
 	return [o for o in game.obj_list_range(loc or game.leader.location, 200, OLC_SCENERY) if o.obj_get_int(obj_f_scenery_teleport_to)]
@@ -175,7 +231,7 @@ def area_of_map(m):
 #endregion
 
 #region the scenario
-ST = {'givers': {}, 'plan': [], 'i': 0, 'results': [], 'anomalies': [], 'cur': None}
+ST = {'givers': {}, 'plan': [], 'i': 0, 'results': [], 'anomalies': [], 'cur': None, 'skipped': {}}
 HOME = {}   # script id -> candidate areas (from the baked areas: ie_bake_arNNNN.OBJS idents)
 
 def locate_givers(givers):
@@ -183,11 +239,13 @@ def locate_givers(givers):
 	for a in sorted(D.AREAS):
 		try:
 			mod = __import__('ie_bake_' + a.lower())
-		except Exception, e:
+		except Exception as e:
 			log('ANOMALY no bake module for %s: %s' % (a, e)); continue
 		idents = set([v['spec'].get('ident') for v in mod.OBJS.values() if v.get('k') == 'npc'])
 		for sid, g in givers.items():
 			if g['ident'] in idents:
+				if a != TOWN and route(TOWN, a) is None:
+					log('GIVER %s in %s: no route from %s (skipped)' % (g['ident'], a, TOWN)); continue
 				HOME.setdefault(sid, []).append(a)
 
 def anomaly(s):
@@ -228,6 +286,7 @@ class Step:  # tiny state holder per tick-driven task
 		self.kind = kind; self.n = 0; self.__dict__.update(kw)
 
 def build_plan():
+	find_core()
 	givers = load_quest_givers()
 	ST['givers'] = givers
 	locate_givers(givers)
@@ -236,18 +295,70 @@ def build_plan():
 		g = givers[sid]
 		log('GIVER %s script %d areas %s quests %s needs %s' % (g['ident'], sid, HOME.get(sid), sorted(set([q for v in g['quests'].values() for _, q in v])), g.get('needs')))
 	sids = flag_order(sorted([s for s in givers if HOME.get(s)], key=lambda s: (TOWN not in HOME[s], HOME[s][0], s)), givers)
+	if os.environ.get('IWDAP_ONLY'):   # debug probe: a single giver
+		sids = [x for x in sids if givers[x]['ident'] in os.environ['IWDAP_ONLY'].split(',')]
 	plan = [Step('start')]
+	route_mode = SCENARIOS[SCENARIO].get('travel') == 'route'
+	if route_mode:   # visit the givers area by area (stable: the flag order wins inside each area's run)
+		sids = route_order(sids)
 	for pas in (1, 2):
 		for sid in sids:
-			plan += visit_steps(sid, pas)
+			plan += route_mode and goto_visit_steps(sid, pas) or visit_steps(sid, pas)
+		if route_mode:
+			plan.append(Step('goto', area=TOWN, pas=pas))
 	ST['plan'] = plan
 
+def route_order(sids):
+	'''group the givers by home area (areas in first-seen order), but keep a giver after any giver whose flags it needs
+	(flag_order's constraints) by only moving a giver earlier past givers of other areas it does not depend on'''
+	first = {}
+	for s in sids:
+		first.setdefault(home_area(s), len(first))
+	return sorted(sids, key=lambda s: (first[home_area(s)], sids.index(s))) if not ORDER_DEPS else _stable_group(sids, first)
+
+ORDER_DEPS = set()   # (a, b) giver script ids: a must be visited before b (filled by flag_order)
+
+def _stable_group(sids, first):
+	out = list(sids)
+	for _ in range(len(out) ** 2):
+		moved = 0
+		for i in range(1, len(out)):
+			a, b = out[i - 1], out[i]
+			if first[home_area(b)] < first[home_area(a)] and (a, b) not in ORDER_DEPS:
+				out[i - 1], out[i] = b, a; moved = 1
+		if not moved:
+			break
+	return out
+
+def home_area(sid):
+	return TOWN in HOME[sid] and TOWN or HOME[sid][0]
+
+def goto_visit_steps(sid, pas):
+	'''route travel: [goto home area, talk] per home area; .group lets the second pass skip both'''
+	steps = []
+	for a in (TOWN in HOME[sid] and [TOWN] or HOME[sid]):
+		g = Step('goto', area=a, pas=pas, sid=sid, timeout=step_timeout('enter', a, sid))
+		g.group = 2
+		steps += [g, Step('talk', sid=sid, optional=len(HOME[sid]) > 1, pas=pas, timeout=step_timeout('talk', sid=sid))]
+	return steps
+
 def visit_steps(sid, pas):
+	'''per home area: [enter hop..., talk, leave hop...]; the first step of a visit carries .group (its step count) so
+	the second pass can skip a whole visit. Easthaven interiors are one hop (enter, talk, leave); IWD2 Targos areas
+	further out (AR1100 -> AR1200 -> AR1201) are routed hop by hop over the converted exit regions.'''
 	steps = []
 	for a in (TOWN in HOME[sid] and [TOWN] or HOME[sid]):  # e.g. Hrothgar is baked in two areas (day/night): try each
 		talk = Step('talk', sid=sid, optional=len(HOME[sid]) > 1, pas=pas, timeout=step_timeout('talk', sid=sid))
-		steps += a == TOWN and [talk] or [Step('enter', area=a, pas=pas, sid=sid, timeout=step_timeout('enter', a, sid)), talk,
-		                                  Step('leave', area=a, pas=pas, sid=sid, timeout=step_timeout('leave', a, sid))]
+		if a == TOWN:
+			visit = [talk]
+		else:
+			path = [TOWN] + route(TOWN, a)
+			visit = [Step('enter', area=path[i + 1], frm=path[i], pas=pas, sid=sid, timeout=step_timeout('enter', path[i + 1], sid))
+			         for i in range(len(path) - 1)] + [talk]
+			visit += [Step('leave', area=path[i], dest=path[i - 1], pas=pas, sid=sid, timeout=step_timeout('leave', path[i], sid))
+			          for i in range(len(path) - 1, 0, -1)]
+		visit[0].group = len(visit)
+		steps += visit
 	return steps
 
 def open_quests(sid):
@@ -257,6 +368,10 @@ def tick_start(st):
 	'''be in the town (AR1000) first; a save elsewhere is teleported to the town's first entrance (expected with the vanilla harness save, not an anomaly)'''
 	import ie_travel_data as D
 	if get_current_map() == D.AREAS[TOWN]['map']:
+		sp = os.environ.get('IWDAP_START')   # debug probe: put the party at x,y first
+		if sp and not getattr(st, 'placed', 0):
+			st.placed = 1; x, y = [int(v) for v in sp.split(',')]; log('probe start at %d,%d' % (x, y))
+			game.fade_and_teleport(0, 0, 0, D.AREAS[TOWN]['map'], x, y); st.n = 0
 		return st.n > 20
 	if st.n == 1:
 		e = sorted(D.AREAS[TOWN]['entrances'].items())[0][1]
@@ -269,13 +384,13 @@ def tick_enter(st):
 	if area_of_map(get_current_map()) == st.area:
 		log('ENTER %s ok after %d ticks' % (st.area, st.n)); return 1
 	if st.n == 1:
-		ic, st.fb = icon_for(TOWN, st.area)
+		ic, st.fb = icon_for(getattr(st, 'frm', TOWN), st.area)
 		if ic == OBJ_HANDLE_NULL:
 			anomaly('no exit icon to %s near the party' % st.area); st.n = st.dl - 1; st.dl0 = st.dl - WALK_CAP
 		else:
 			game.scroll_to(ic.location); st.ic = ic
 	elif st.n == 10:
-		st.click_from = _loc(game.leader); r = click_on_obj(st.ic, 'jump'); log('CLICK icon to %s at %s: %s' % (st.area, _loc(st.ic), r))
+		st.click_from = _loc(game.leader); r = click_on_obj(st.ic, 'jump'); log('CLICKED icon to %s at %s: %s' % (st.area, _loc(st.ic), r))
 	elif st.n == 60 and getattr(st, 'ic', None) and _loc(game.leader) == getattr(st, 'click_from', None):
 		st.click_from = _loc(game.leader); r = click_on_obj(st.ic, 'jump'); log('RECLICK %s icon (leader has not moved from %s): %s' % (st.area, st.click_from, r))
 	elif st.n % 25 == 0 and st.n < st.dl and getattr(st, 'ic', None):
@@ -289,16 +404,18 @@ def tick_enter(st):
 
 def tick_leave(st):
 	due = walk_due(st, getattr(st, 'ic', None))
-	if get_current_map() == 5900:
+	import ie_travel_data as D
+	dest = getattr(st, 'dest', TOWN)
+	if get_current_map() == D.AREAS[dest]['map']:     # (was 5900: Easthaven's map before the 5012-5030 renumbering)
 		log('LEAVE %s ok after %d ticks' % (st.area, st.n)); return 1
 	if st.n == 1:
-		ic, st.fb = icon_for(st.area, TOWN)
+		ic, st.fb = icon_for(st.area, dest)
 		if ic == OBJ_HANDLE_NULL:
 			anomaly('no exit icon in %s' % st.area); st.n = st.dl - 1; st.dl0 = st.dl - WALK_CAP
 		else:
 			game.scroll_to(ic.location); st.ic = ic
 	elif st.n == 10:
-		st.click_from = _loc(game.leader); r = click_on_obj(st.ic, 'jump'); log('CLICK exit icon of %s at %s: %s' % (st.area, _loc(st.ic), r))
+		st.click_from = _loc(game.leader); r = click_on_obj(st.ic, 'jump'); log('CLICKED exit icon of %s at %s: %s' % (st.area, _loc(st.ic), r))
 	elif st.n == 60 and getattr(st, 'ic', None) and _loc(game.leader) == getattr(st, 'click_from', None):
 		st.click_from = _loc(game.leader); r = click_on_obj(st.ic, 'jump'); log('RECLICK %s icon (leader has not moved from %s): %s' % (st.area, st.click_from, r))
 	elif st.n % 25 == 0 and st.n < st.dl and getattr(st, 'ic', None):
@@ -308,6 +425,24 @@ def tick_leave(st):
 		m, (x, y) = st.fb; game.fade_and_teleport(0, 0, 0, m, x, y)
 	elif st.n > st.dl + 150:
 		anomaly('could not leave %s' % st.area); return 1
+	return 0
+
+def tick_goto(st):
+	'''route travel: hop by hop (each hop is an 'enter' step: click the exit icon, teleport fallback = ANOMALY) from the
+	current area to st.area, re-routing after every hop'''
+	cur = area_of_map(get_current_map())
+	if cur == st.area and getattr(st, 'hop', None) is None:
+		log('GOTO %s ok after %d ticks, %d hops' % (st.area, st.n, getattr(st, 'hops', 0))); return 1
+	if getattr(st, 'hop', None) is None:
+		path = cur and route(cur, st.area)
+		st.hops = getattr(st, 'hops', 0) + 1
+		if not path or st.hops > 8:
+			anomaly('no way from %s to %s (map %d, hop %d)' % (cur, st.area, get_current_map(), st.hops)); return 1
+		st.hop = Step('enter', area=path[0], frm=cur, sid=getattr(st, 'sid', None), timeout=step_timeout('enter', path[0], getattr(st, 'sid', None)))
+		log('HOP %s -> %s (towards %s)' % (cur, path[0], st.area))
+	st.hop.n += 1
+	if tick_enter(st.hop):
+		st.hop = None
 	return 0
 
 def tick_talk(st):
@@ -333,6 +468,9 @@ def tick_talk(st):
 		if st.npc == OBJ_HANDLE_NULL:
 			if getattr(st, 'optional', 0):
 				log('TALK %s not in %s (optional)' % (g['ident'], area_of_map(get_current_map()))); return 1
+			if HIDDEN.get(st.sid):      # placed hidden (IE: revealed later by a script or story flag): not a conversion bug
+				log('SKIP %s (script %d) is hidden on map %d (starts hidden in the IE; revealed by a script later)' % (g['ident'], st.sid, get_current_map()))
+				finish_talk(st, 0, skipped=1); return 1
 			anomaly('%s (script %d) not found on map %d' % (g['ident'], st.sid, get_current_map())); finish_talk(st, 0); return 1
 		npc, to = load_dlg_graph(st.sid)
 		goals = set(g['quests'])
@@ -341,12 +479,12 @@ def tick_talk(st):
 		game.scroll_to(st.npc.location)
 	elif st.n == 5:
 		lx, ly = location_to_axis(game.leader.location); nx, ny = location_to_axis(st.npc.location)
-		if max(abs(lx - nx), abs(ly - ny)) > 40:   # engine path search gives up past ~40 tiles (path length out of range,
+		if max(abs(lx - nx), abs(ly - ny)) > 40 and not os.environ.get('IWDAP_NO_APPROACH'):   # engine path search gives up past ~40 tiles (path length out of range,
 			# node fallback fails): move the party next to the NPC first, then click as a player would
 			log('APPROACH %s: leader %s is %d tiles away, moving next to the NPC' % (g['ident'], (lx, ly), max(abs(lx - nx), abs(ly - ny))))
 			game.fade_and_teleport(0, 0, 0, get_current_map(), nx + 4, ny + 4)
 	elif st.n == 20:
-		r = click_on_obj(st.npc, 'talk'); log('CLICK %s at %s: %s' % (g['ident'], _loc(st.npc), r))
+		r = click_on_obj(st.npc, 'talk'); log('CLICKED %s at %s: %s' % (g['ident'], _loc(st.npc), r))
 	elif st.n % 25 == 0 and st.n < st.dl and not ST['cur']['talked']:
 		log('  wait %s: leader %s npc %s dist %.1f' % (g['ident'], _loc(game.leader), _loc(st.npc), game.leader.distance_to(st.npc)))
 	elif due and not ST['cur']['talked']:
@@ -356,7 +494,7 @@ def tick_talk(st):
 		finish_talk(st, 1); return 1
 	return 0
 
-def finish_talk(st, talked):
+def finish_talk(st, talked, skipped=0):
 	g = ST['givers'][st.sid]; c = ST['cur'] or {'hit': [], 'replies': 0}
 	byq = {}
 	for line, qs in sorted(g['quests'].items()):
@@ -369,7 +507,9 @@ def finish_talk(st, talked):
 		ok = state in (qs_mentioned, qs_accepted)
 		chosen = [l for l in lines if l in c['hit']]
 		ST['results'].append((g['ident'], q, sr, ok, state, chosen))
-		log('RESULT %s %s quest %d (journal %d, replies %s) state %d, chosen %s' % (ok and 'PASS' or 'FAIL', g['ident'], q, sr,
+		if skipped and not ok:
+			ST['skipped'][g['ident']] = 1
+		log('RESULT %s %s quest %d (journal %d, replies %s) state %d, chosen %s' % (ok and 'PASS' or skipped and 'SKIP' or 'FAIL', g['ident'], q, sr,
 			lines, state, chosen))
 	if LOG:
 		f = open(LOG, 'a'); f.write('SHOT talk_%s\n' % g['ident']); f.close()
@@ -418,7 +558,7 @@ def ensure_clearance():
 		import debug
 		try:
 			debug.genclr(); log('CLEARANCE generated for map %d' % m)
-		except Exception, e:
+		except Exception as e:
 			log('CLEARANCE failed on map %d: %s' % (m, e))
 
 def gs_iwd_tour(slot):
@@ -428,19 +568,19 @@ def gs_iwd_tour(slot):
 	if not ST['plan'] and ST['i'] == 0:
 		import ie_travel
 		try: ie_travel.start()
-		except Exception, e: log('travel start: %s' % e)
+		except Exception as e: log('travel start: %s' % e)
 		build_plan()
 	if ST['i'] >= len(ST['plan']):
 		report(); return 1
 	st = ST['plan'][ST['i']]
-	if st.n == 0 and st.kind in ('enter', 'talk') and getattr(st, 'pas', 1) == 2 and not open_quests(st.sid):
-		ST['i'] += st.kind == 'enter' and 3 or 1; return 0   # (an interior visit: enter, talk, leave)                   # second pass: only givers with quests still open
+	if st.n == 0 and st.kind in ('enter', 'talk', 'goto') and getattr(st, 'sid', None) is not None and getattr(st, 'pas', 1) == 2 and not open_quests(st.sid):
+		ST['i'] += getattr(st, 'group', 1); return 0   # (an interior visit: enter, talk, leave)                   # second pass: only givers with quests still open
 	st.n += 1
 	if st.n % 25 == 1 or os.environ.get('IWDAP_VERBOSE'):
 		log('TICK step %d/%d %s n=%d map %d dlg %d' % (ST['i'], len(ST['plan']), st.kind, st.n, get_current_map(), dlg.is_engaged()))
 	try:
-		done = {'start': tick_start, 'enter': tick_enter, 'leave': tick_leave, 'talk': tick_talk}[st.kind](st)
-	except Exception, e:
+		done = {'start': tick_start, 'enter': tick_enter, 'leave': tick_leave, 'talk': tick_talk, 'goto': tick_goto}[st.kind](st)
+	except Exception as e:
 		import traceback; anomaly('step %s raised %s %s' % (st.kind, e, traceback.format_exc())); done = 1
 	if done:
 		ST['i'] += 1
@@ -453,13 +593,34 @@ def report():
 		seen[(r[0], r[1])] = r
 	for (who, q), r in sorted(seen.items()):
 		st = game.quests[q].state
-		log('TABLE %s | quest %d | journal %d | %s | state %d' % (who, q, r[2], st in (qs_mentioned, qs_accepted, qs_completed) and 'PASS' or 'FAIL', st))
+		verdict = st in (qs_mentioned, qs_accepted, qs_completed) and 'PASS' or ST['skipped'].get(who) and 'SKIP' or 'FAIL'
+		log('TABLE %s | quest %d | journal %d | %s | state %d' % (who, q, r[2], verdict, st))
 	log('DONE')
 
 def gs_idle_forever(slot):
 	return 0
 
-def setup_playtester(autoplayer):
+def no_movies():
+	'''converted intro / chapter slides block the tour (a slide waits for its sound; under Wine on the box it never
+	ended): unless IWDAP_MOVIES=1 they are logged and skipped (ie_movies_rt is the converted module's only player)'''
+	if os.environ.get('IWDAP_MOVIES'):
+		return
+	try:
+		import ie_movies_rt as M
+	except ImportError:
+		return
+	def play(key):
+		log('MOVIE %s skipped (autoplayer; IWDAP_MOVIES=1 plays it)' % key); return 0
+	def play_intro():
+		if not game.global_vars[M.FLAG_VAR]:
+			game.global_vars[M.FLAG_VAR] = 1; log('MOVIE intro skipped (autoplayer)')
+		return 0
+	M.play = play; M.play_intro = play_intro
+
+def setup_playtester(autoplayer, scenario=None):
+	if scenario:
+		configure(scenario)
+	name = SCENARIOS[SCENARIO]['scheme']
 	cs = ControlScheme()
 	cs.__set_stages__([
 		GoalStateStart(gs_iwd_tour, ('end', 100), ('start', 100)),
@@ -468,12 +629,13 @@ def setup_playtester(autoplayer):
 	if os.environ.get('IWDAP_IGNORE_FOCUS'):   # headless runs (private Xvfb, no window manager): Win32 focus is unreliable
 		import controllers
 		controllers.tpgui.game_is_focused = lambda: True
-	autoplayer.add_scheme(cs, 'iwd_easthaven')
+	autoplayer.add_scheme(cs, name)
 	autoplayer.set_dialog_handler(iwd_dialog_handler)
 	autoplayer.set_combat_handler(lambda slot: None)
-	autoplayer.push_scheme('iwd_easthaven')
+	autoplayer.push_scheme(name)
 	autoplayer.__exc_hook__ = lambda tb: anomaly('controller tick raised: ' + tb)
-	log('scenario easthaven: core=%s' % CORE)
+	log('scenario %s: town %s core=%s' % (SCENARIO, TOWN, find_core()))
+	no_movies()
 	if LOG:
 		f = open(LOG, 'a'); f.write('SHOT town_start\n'); f.close()
 	autoplayer.schedule(700)
