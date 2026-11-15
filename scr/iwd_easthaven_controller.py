@@ -166,7 +166,9 @@ def dist_to_goal(npc, to, goals):
 def click_on_obj(o, action=None):
 	'''pre-click verification lives in controller_ui_util.verified_click (generic for all controllers)'''
 	import controller_ui_util as cu
-	ok, msg = cu.verified_click(o, action, log)
+	# never fall back to a blind click for a talk: on an NPC that shows the attack cursor (IE neutrals the engine
+	# rates hostile, e.g. Firtha) it would be an attack and start a fight the tour itself caused
+	ok, msg = cu.verified_click(o, action, log, fallback=None if action == 'talk' else 'click')
 	return msg
 
 def _loc(o):
@@ -508,6 +510,9 @@ def tick_talk(st):
 			game.fade_and_teleport(0, 0, 0, get_current_map(), nx + 4, ny + 4)
 	elif st.n == 20:
 		r = click_on_obj(st.npc, 'talk'); log('CLICKED %s at %s: %s' % (g['ident'], _loc(st.npc), r))
+		if r.startswith('not clicked'):   # the click would be an attack: start the dialogue directly instead
+			anomaly('%s shows no talk cursor (attack cursor on a friendly?): scripted dialogue start, no click' % g['ident'])
+			st.npc.object_script_execute(game.leader, san_dialog)
 	elif st.n % 25 == 0 and st.n < st.dl and not ST['cur']['talked']:
 		log('  wait %s: leader %s npc %s dist %.1f' % (g['ident'], _loc(game.leader), _loc(st.npc), game.leader.distance_to(st.npc)))
 	elif due and not ST['cur']['talked']:
