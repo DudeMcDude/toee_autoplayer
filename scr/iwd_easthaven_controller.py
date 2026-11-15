@@ -188,6 +188,18 @@ def find_npc(sid):
 			return o
 	return OBJ_HANDLE_NULL
 
+def spawn_tiles(ident, area):
+	'''the giver's placed spot(s) in area (converted creature spec, IE pixels -> tile): scanned first, since only
+	loaded sectors are listed and some givers stand far from every entrance (IWD2 AR1200: Isher ~70 tiles away)'''
+	try:
+		import ie_runtime as rt
+		mod = __import__('ie_creatures_' + re.sub('^I2', '', area or '').lower())
+		ar = re.sub('^I2', '', area).upper()
+		return [rt.ie_to_tile(ar, c['x'], c['y']) for c in getattr(mod, 'CREATURES', [])
+		        if c.get('ident') == ident and c.get('x') is not None]
+	except Exception as e:
+		log('  no spawn spot for %s in %s: %s' % (ident, area, e)); return []
+
 def route(src, dst):
 	'''shortest list of areas from src (excluded) to dst over the exit regions of ie_travel_data (converted areas only)'''
 	import ie_travel_data as D
@@ -481,6 +493,7 @@ def tick_talk(st):
 			import ie_travel_data as D            # only loaded sectors are listed: look around the area's entrances
 			a = area_of_map(get_current_map())
 			st.scan = [e[:2] for _, e in sorted(D.AREAS[a]['entrances'].items())] if a in D.AREAS else []
+			st.scan = spawn_tiles(g['ident'], a) + st.scan   # far from every entrance (IWD2 Isher/Caulder in AR1200)
 			st.scanned = None
 		if st.npc == OBJ_HANDLE_NULL and st.scanned:   # sectors around the last scroll target are loaded by now
 			e = st.scanned
