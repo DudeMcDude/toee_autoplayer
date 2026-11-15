@@ -9,11 +9,11 @@ def play_new_game():
     #controllers.UiController.start_ui_thread()
     import os
     scenario = os.environ.get('AUTOPLAYER_SCENARIO')
-    if scenario == 'iwd_ch1': # ie2toee IWD: new game -> prologue critical path -> AR2000 (see scr/iwd_ch1_driver.py)
+    if scenario in ('iwd_ch1', 'iwd2_ch1'): # ie2toee: new game -> IWD prologue to AR2000 / IWD2 Shawford chain to Ulbrec (scr/iwd_ch1_driver.py)
         import iwd_ch1_driver
         global autoplayer
         autoplayer = playtester.Playtester()
-        iwd_ch1_driver.setup_playtester(autoplayer)
+        iwd_ch1_driver.setup_playtester(autoplayer, 'iwd2' if scenario == 'iwd2_ch1' else 'iwd')
         return
     if scenario in ('easthaven', 'targos'): # ie2toee IWD Easthaven / IWD2 Targos conversions (see scr/iwd_easthaven_controller.py)
         import iwd_easthaven_controller

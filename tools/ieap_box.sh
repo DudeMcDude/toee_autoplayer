@@ -12,8 +12,9 @@ GAME=${1:?iwd or iwd2}; TAG=${2:-run}; SECS=${3:-600}
 case "$GAME" in
   iwd)  SCEN=easthaven; MODULE=IWD;  OVERLAY=${OVERLAY:-/home/box/games/ToEE-ie} ;;
   iwd-ch1) SCEN=iwd_ch1; MODULE=IWD; OVERLAY=${OVERLAY:-/home/box/games/ToEE-ie} ;;   # new game -> AR2000 (scr/iwd_ch1_driver.py)
+  iwd2-ch1) SCEN=iwd2_ch1; MODULE=ToEE; OVERLAY=${OVERLAY:-/workspace/scratch/ToEE-iwd2ap} ;;   # new game -> Shawford chain -> Ulbrec
   iwd2) SCEN=targos;    MODULE=ToEE; OVERLAY=${OVERLAY:-/workspace/scratch/ToEE-iwd2ap} ;;
-  *) echo "usage: $0 iwd|iwd-ch1|iwd2 TAG [SECS]" >&2; exit 2 ;;
+  *) echo "usage: $0 iwd|iwd-ch1|iwd2|iwd2-ch1 TAG [SECS]" >&2; exit 2 ;;
 esac
 export WINEPREFIX=${WINEPREFIX:-$HOME/.wine-toee-ie}
 export TP_DIST=${TP_DIST:-/workspace/tp-build/dist-autoplayer-iwd2}

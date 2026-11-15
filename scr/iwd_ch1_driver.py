@@ -106,11 +106,24 @@ def V(name):
 	import ie_runtime as rt
 	return rt.get_var(None, name, 'GLOBAL')
 
+def set_var(name, v):
+	import ie_runtime as rt
+	rt.set_var(None, name, 'GLOBAL', v)
+
 def area_map(area):
 	import ie_travel_data as D
 	return D.AREAS[area]['map']
 
+def area_of(m):
+	import ie_travel_data as D
+	for a, d in D.AREAS.items():
+		if d['map'] == m:
+			return a
+	return None
+
 def travel(area):
+	"""a teleport onto the area's first entrance. (Walking out through the town hub instead, AR1007 -> AR1000 -> AR1006,
+	did not avoid the IWD AR1006 re-entry crash: run3 of Nov 15; tools/ieap_ch1.sh relaunches from the autosave.)"""
 	import ie_travel_data as D
 	e = sorted(D.AREAS[area]['entrances'].items())[0][1]
 	log('TRAVEL %s (map %d) entrance %s' % (area, D.AREAS[area]['map'], e[:2]))
@@ -127,25 +140,30 @@ class Step(object):
 		self.kind, self.n = kind, 0
 		self.__dict__.update(kw)
 
-def talk_step(st, ident, area, goal, until):
-	'''talk to ident (in area) until until() holds; up to 4 conversations'''
+def talk_step(st, ident, area, goal, until, force=None, talks=4):
+	'''talk to ident (in area) until until() holds; up to 4 conversations. force: (var, value) set as a logged
+	SHORTCUT when the talks don't get there (IWD2 test runs: get past a gate to test the rest)'''
 	if until():
 		return 1
 	if get_current_map() != area_map(area):
-		if st.n == 1:
+		if st.n % 60 == 1:
 			travel(area)
-		return st.n > 200 and fail('%s: could not reach %s' % (ident, area))
+		return st.n > 400 and fail('%s: could not reach %s' % (ident, area))
 	if dlg.is_engaged():
 		return 0
 	if not hasattr(st, 'sid'):
-		st.sid, src = npc_script(ident, area)
+		st.sid, src = npc_script(ident, area[-6:])     # (IWD2 travel keys carry an I2 prefix)
 		if st.sid is None:
 			return fail('no converted %s in %s' % (ident, area))
 		npc, to, goals = dlg_graph(st.sid, src, goal)
 		st.goals, st.dist, st.talks = goals, E.dist_to_goal(npc, to, goals), 0
 		log('TALK %s sid %d goal %r: %d goal replies' % (ident, st.sid, goal, len(goals)))
-	if st.talks >= 4:
-		return fail('%s: %s not reached after 4 conversations' % (ident, goal))
+	if st.talks >= talks:
+		if force and st.n % 40 == 30:
+			set_var(force[0], force[1]); ST.setdefault('shortcuts', []).append('%s=%d' % force)
+			log('SHORTCUT %s: %s not reached after %d conversations: set %s = %d' % (ident, goal, talks, force[0], force[1]))
+			return 1
+		return not force and fail('%s: %s not reached after %d conversations' % (ident, goal, talks))
 	if st.n % 40 == 10:
 		o = find_obj(st.sid)
 		if o == OBJ_HANDLE_NULL:
@@ -199,9 +217,9 @@ def step_caravan(st):
 			return 0
 		log('CARAVAN found (Caravan_Quest %d)' % V('Caravan_Quest')); return 1
 	if get_current_map() != area_map('AR1200'):
-		if st.n == 1:
+		if st.n % 60 == 1:
 			travel('AR1200')
-		return st.n > 200 and fail('could not reach AR1200')
+		return st.n > 400 and fail('could not reach AR1200')
 	import ie_travel_data as D
 	trig = [t for t in D.AREAS['AR1200'].get('triggers', []) if t.get('module') == 'ie_bcs_caratrg1_area']
 	if not trig:
@@ -240,16 +258,97 @@ STEPS = [
 	                                lambda: get_current_map() == area_map('AR2000') or ST.get('departed'))),
 	('ar2000', step_ar2000),
 ]
+
+# ---- IWD2 (AUTOPLAYER_SCENARIO=iwd2_ch1, module ToEE of the iwd2-targos convert) ----
+def step_newgame2(st):
+	"""new game in the ToEE module (the party starts in the base module's opening): go to Targos"""
+	if st.n == 1:
+		log('NEW GAME started on map %d, party %d' % (get_current_map(), len(game.party)))
+	if dlg.is_engaged():
+		dlg_reply(0); return 0          # (a vignette or greeting of the base module: answer and move on)
+	if st.n == 40:
+		travel('I2AR1000')
+	if st.n == 140:
+		shot('targos_docks')
+	return st.n > 160
+
+def hostiles():
+	out = []
+	for o in game.obj_list_vicinity(game.leader.location, OLC_CRITTER):
+		if o in game.party or o.is_unconscious() or o.leader_get() != OBJ_HANDLE_NULL:
+			continue
+		try:
+			if not o.is_friendly(game.leader):
+				out.append(o)
+		except Exception:
+			pass
+	return out
+
+def step_palisade(st):
+	"""Goblins_Attack_Palisade 1: Shawford's cutscene (12cWar0/2) and AR1200.BCS start the battle at the palisade.
+	Let it run ~30 s (shot), then the kill helper: every hostile critter near the party dies, until none are left."""
+	if dlg.is_engaged():
+		return 0
+	if get_current_map() != area_map('I2AR1200'):
+		if st.n % 100 == 50:
+			travel('I2AR1200')
+		return st.n > 1200 and fail('palisade: not in AR1200')
+	st.t0 = getattr(st, 't0', 0) + 1
+	if st.t0 == 300:
+		shot('palisade')
+	if st.t0 > 400 and st.t0 % 20 == 0:
+		h = hostiles()
+		if h:
+			log('KILL %d hostiles: %s' % (len(h), ', '.join(o.description for o in h[:8])))
+			for o in h:
+				o.critter_kill()
+			st.kills = getattr(st, 'kills', 0) + len(h)
+		elif st.t0 > 700:
+			log('PALISADE over: %d killed; Goblins_Attack_Palisade %d' % (getattr(st, 'kills', 0), V('Goblins_Attack_Palisade')))
+			return 1
+	return st.t0 > 2500 and fail('palisade: hostiles keep coming')
+
+def step_end2(st):
+	sc = ST.get('shortcuts')
+	log('SUMMARY IWD2 CH1 %s: Shaengarne_Quest %d AR2000_Revealed %d (AR2000 is reached by the worldmap and is '
+	    'not converted for IWD2: the run ends here)%s' % ('PASS' if not sc else 'END WITH SHORTCUTS', V('Shaengarne_Quest'),
+	    V('AR2000_Revealed'), ' shortcuts: ' + ', '.join(sc) if sc else ''))
+	return 1
+
+STEPS2 = [
+	('newgame', step_newgame2),
+	('shawford0', lambda st: talk_step(st, '12shawfo', 'I2AR1201', r'"Lumber_Quest", "GLOBAL", 1\)', lambda: V('Lumber_Quest') >= 1)),
+	# Shawford offers the arrow quest once the lumber quest is done (Crane_Wheel) or given up: Olap, at the palisade
+	('olap', lambda st: talk_step(st, '12olap', 'I2AR1200', r'"Lumber_Quest_Aborted", "GLOBAL", 1\)',
+	                              lambda: V('Lumber_Quest_Aborted') >= 1 or V('Crane_Wheel') > 0, ('Lumber_Quest_Aborted', 1), 1)),
+	('shawford1', lambda st: talk_step(st, '12shawfo', 'I2AR1201', r'"Arrow_Quest", "GLOBAL", 1\)', lambda: V('Arrow_Quest') >= 1, ('Arrow_Quest', 1))),
+	('deirdre', lambda st: talk_step(st, '11deird', 'I2AR1102', r'"Arrow_Quest", "GLOBAL", 3\)', lambda: V('Arrow_Quest') >= 3, ('Arrow_Quest', 3))),
+	('shawford2', lambda st: talk_step(st, '12shawfo', 'I2AR1201', r'"Dead_Goblin_Quest", "GLOBAL", 1\)', lambda: V('Dead_Goblin_Quest') >= 1, ('Dead_Goblin_Quest', 1))),
+	('koluhm', lambda st: talk_step(st, '11koluhm', 'I2AR1107', r'"Dead_Goblin_Quest", "GLOBAL", [2-5]\)', lambda: V('Dead_Goblin_Quest') >= 2, ('Dead_Goblin_Quest', 2))),
+	('shawford3', lambda st: talk_step(st, '12shawfo', 'I2AR1201', r'"Palisade_Iron_Collar_Quest", "GLOBAL", 1\)',
+	                                   lambda: V('Palisade_Iron_Collar_Quest') >= 1, ('Palisade_Iron_Collar_Quest', 1))),
+	('geoffrey', lambda st: talk_step(st, '10black', 'I2AR1003', r'"Palisade_Iron_Collar_Quest", "GLOBAL", 2\)',
+	                                  lambda: V('Palisade_Iron_Collar_Quest') >= 2, ('Palisade_Iron_Collar_Quest', 2))),
+	('shawford4', lambda st: talk_step(st, '12shawfo', 'I2AR1201', r'"Goblins_Attack_Palisade", "GLOBAL", 1\)',
+	                                   lambda: V('Goblins_Attack_Palisade') >= 1, ('Goblins_Attack_Palisade', 1))),
+	('palisade', step_palisade),
+	('ulbrec', lambda st: talk_step(st, '11ulbrec', 'I2AR1101', r'"Shaengarne_Quest", "GLOBAL", 1\)', lambda: V('Shaengarne_Quest') >= 1, ('Shaengarne_Quest', 1))),
+	('end', step_end2),
+]
+STATUS = {'iwd': ('Join_Posse', 'Caravan_Quest', 'Supply_Quest'),
+          'iwd2': ('Lumber_Quest', 'Arrow_Quest', 'Dead_Goblin_Quest', 'Palisade_Iron_Collar_Quest', 'Goblins_Attack_Palisade', 'Shaengarne_Quest')}
+GAME = {'g': 'iwd'}
 ST = {'i': 0, 'steps': None, 'fail': None}
 
 def gs_ch1(slot):
 	if not len(game.party):
 		return 0
 	if ST['steps'] is None:
-		ST['steps'] = [Step(k, fn=f) for k, f in STEPS]
+		steps = STEPS2 if GAME['g'] == 'iwd2' else STEPS
+		ST['steps'] = [Step(k, fn=f) for k, f in steps]
 		fr = os.environ.get('IWDAP_CH1_FROM')     # resume from a save made on the way (e.g. depart)
 		if fr:
-			ST['i'] = [k for k, f in STEPS].index(fr); log('RESUME at step %s (map %d)' % (fr, get_current_map()))
+			ST['i'] = [k for k, f in steps].index(fr); log('RESUME at step %s (map %d)' % (fr, get_current_map()))
 		try:
 			import ie_travel; ie_travel.start()
 		except Exception as e:
@@ -264,8 +363,8 @@ def gs_ch1(slot):
 	st = ST['steps'][ST['i']]
 	st.n += 1
 	if st.n == 1 or st.n % 100 == 0:
-		log('STEP %s n=%d map %d dlg %d Join_Posse %d Caravan %d Supply %d' % (st.kind, st.n, get_current_map(),
-			dlg.is_engaged(), V('Join_Posse'), V('Caravan_Quest'), V('Supply_Quest')))
+		log('STEP %s n=%d map %d dlg %d %s' % (st.kind, st.n, get_current_map(), dlg.is_engaged(),
+			' '.join('%s %d' % (v, V(v)) for v in STATUS[GAME['g']])))
 	try:
 		done = st.fn(st)
 	except Exception as e:
@@ -284,8 +383,9 @@ def gs_quit_to_menu(slot):
 		slot.state = {'k': 1}; key('Escape')
 	return 1 if slot.state else 0
 
-def setup_playtester(autoplayer):
-	E.configure('easthaven')
+def setup_playtester(autoplayer, which='iwd'):
+	GAME['g'] = which
+	E.configure('targos' if which == 'iwd2' else 'easthaven')
 	cs = ControlScheme()
 	add = [GoalState('', gs_create_and_push_scheme, ('', 300), params={'param1': 'party_pool_add_pc',
 	       'param2': (create_party_pool_add_pc_scheme, ())}) for i in range(4)]
@@ -312,6 +412,6 @@ def setup_playtester(autoplayer):
 	autoplayer.set_combat_handler(lambda slot: None)
 	autoplayer.push_scheme('iwd_ch1')
 	autoplayer.__exc_hook__ = lambda tb: log('ANOMALY controller tick raised: ' + tb)
-	log('scenario iwd_ch1: core=%s' % E.find_core())
+	log('scenario %s_ch1: core=%s' % (which, E.find_core()))
 	E.no_movies()
 	autoplayer.schedule(700)
