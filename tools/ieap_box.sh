@@ -11,8 +11,9 @@ set -u
 GAME=${1:?iwd or iwd2}; TAG=${2:-run}; SECS=${3:-600}
 case "$GAME" in
   iwd)  SCEN=easthaven; MODULE=IWD;  OVERLAY=${OVERLAY:-/home/box/games/ToEE-ie} ;;
+  iwd-ch1) SCEN=iwd_ch1; MODULE=IWD; OVERLAY=${OVERLAY:-/home/box/games/ToEE-ie} ;;   # new game -> AR2000 (scr/iwd_ch1_driver.py)
   iwd2) SCEN=targos;    MODULE=ToEE; OVERLAY=${OVERLAY:-/workspace/scratch/ToEE-iwd2ap} ;;
-  *) echo "usage: $0 iwd|iwd2 TAG [SECS]" >&2; exit 2 ;;
+  *) echo "usage: $0 iwd|iwd-ch1|iwd2 TAG [SECS]" >&2; exit 2 ;;
 esac
 export WINEPREFIX=${WINEPREFIX:-$HOME/.wine-toee-ie}
 export TP_DIST=${TP_DIST:-/workspace/tp-build/dist-autoplayer-iwd2}
@@ -26,9 +27,10 @@ mkdir -p "$IE_OUT/ingame"
 export IWDAP_IGNORE_FOCUS=1 AUTOPLAYER_SCENARIO=$SCEN IE2TOEE_CORE="Z:$CORE" IWDAP_LOG="Z:$IE_OUT/ingame/probe.log"
 export TP_AUTOEXEC="from templeplus import autoplayer; autoplayer.play_new_game()"
 export TP_AUTOLOAD=${TP_AUTOLOAD:-SlotAuto}
-if [ "$MODULE" != ToEE ]; then   # the harness save must be in the module's own Save folder (only added, never removed)
-  mkdir -p "$OVERLAY/modules/$MODULE/Save"
-  for f in "$SAVES/$TP_AUTOLOAD".* "$SAVES/$TP_AUTOLOAD"*.gsi; do [ -e "$OVERLAY/modules/$MODULE/Save/$(basename "$f")" ] || cp -a "$f" "$OVERLAY/modules/$MODULE/Save/"; done
+if [ "$MODULE" != ToEE ]; then   # the harness save must be in the module's own Save folder: refreshed from the vanilla
+  # one every run (the probes' autosaves overwrite it with pickled time events of modules a later run can't import)
+  mkdir -p "$OVERLAY/modules/$MODULE/Save"; rm -f "$OVERLAY/modules/$MODULE/Save/$TP_AUTOLOAD".iev
+  for f in "$SAVES/$TP_AUTOLOAD".* "$SAVES/$TP_AUTOLOAD"*.gsi; do cp -a "$f" "$OVERLAY/modules/$MODULE/Save/"; done
 fi
 NAME=$(basename "$OVERLAY"); LINK="$WINEPREFIX/drive_c/GOG Games/$NAME"
 [ -e "$LINK" ] || ln -s "$OVERLAY" "$LINK"
