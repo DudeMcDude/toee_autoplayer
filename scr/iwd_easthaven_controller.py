@@ -225,6 +225,25 @@ def icon_for(area, dest_area):
 			best, bd = o, d
 	return best, (D.AREAS[dest_area]['map'], (ent[0], ent[1]))
 
+APPROACH_TILES = 40   # engine path search gives up past ~40 tiles ("Path Length is out of range", node fallback fails)
+
+def approach_icon(area, ic, label):
+	'''a player crosses a big map in several clicks: when the leader is more than APPROACH_TILES from the exit icon,
+	move the party to this area's entrance nearest the icon (an arrival tile, walkable by construction) first'''
+	import ie_travel_data as D
+	if os.environ.get('IWDAP_NO_APPROACH') or area not in D.AREAS:
+		return
+	lx, ly = _loc(game.leader); ix, iy = _loc(ic)
+	if max(abs(lx - ix), abs(ly - iy)) <= APPROACH_TILES:
+		return
+	ents = [e[:2] for e in D.AREAS[area]['entrances'].values()]
+	ents = [e for e in ents if max(abs(e[0] - ix), abs(e[1] - iy)) <= APPROACH_TILES]
+	if not ents:
+		return
+	e = min(ents, key=lambda e: (e[0] - ix) ** 2 + (e[1] - iy) ** 2)
+	log('APPROACH %s icon: leader %s is %d tiles away, moving to entrance %s first' % (label, (lx, ly), max(abs(lx - ix), abs(ly - iy)), tuple(e)))
+	game.fade_and_teleport(0, 0, 0, get_current_map(), e[0], e[1])
+
 def area_of_map(m):
 	import ie_travel_data as D
 	return D.BY_MAP.get(m)
@@ -389,6 +408,8 @@ def tick_enter(st):
 			anomaly('no exit icon to %s near the party' % st.area); st.n = st.dl - 1; st.dl0 = st.dl - WALK_CAP
 		else:
 			game.scroll_to(ic.location); st.ic = ic
+	elif st.n == 3 and getattr(st, 'ic', None):
+		approach_icon(area_of_map(get_current_map()), st.ic, st.area)
 	elif st.n == 10:
 		st.click_from = _loc(game.leader); r = click_on_obj(st.ic, 'jump'); log('CLICKED icon to %s at %s: %s' % (st.area, _loc(st.ic), r))
 	elif st.n == 60 and getattr(st, 'ic', None) and _loc(game.leader) == getattr(st, 'click_from', None):
@@ -414,6 +435,8 @@ def tick_leave(st):
 			anomaly('no exit icon in %s' % st.area); st.n = st.dl - 1; st.dl0 = st.dl - WALK_CAP
 		else:
 			game.scroll_to(ic.location); st.ic = ic
+	elif st.n == 3 and getattr(st, 'ic', None):
+		approach_icon(st.area, st.ic, st.area)
 	elif st.n == 10:
 		st.click_from = _loc(game.leader); r = click_on_obj(st.ic, 'jump'); log('CLICKED exit icon of %s at %s: %s' % (st.area, _loc(st.ic), r))
 	elif st.n == 60 and getattr(st, 'ic', None) and _loc(game.leader) == getattr(st, 'click_from', None):
