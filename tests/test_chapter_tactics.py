@@ -74,6 +74,28 @@ class Actor:
 
 
 class MovementTests(unittest.TestCase):
+    def test_loot_chooses_member_with_sight_of_corpse(self):
+        corpse = MagicMock()
+        corpse.object_flags_get.return_value = 0
+        corpse.is_unconscious.return_value = True
+        party = [MagicMock(), MagicMock()]
+        for pc, distance, sight in zip(party, (1.2, 2.7), (False, True)):
+            pc.is_unconscious.return_value = False
+            pc.distance_to.return_value = distance
+            pc.has_los.return_value = sight
+        game = MagicMock(party=party)
+        game.get_obj_by_id.return_value = corpse
+        driver = MagicMock()
+        driver.get_current_map.return_value = driver.area_map.return_value = 5030
+        items = MagicMock()
+        has = MagicMock(side_effect=[False, True])
+        scope = dict(game=game, driver=lambda: driver, has=has, OBJ_HANDLE_NULL=None, OF_OFF=1)
+        recover = function_from_file('recover_drop', 'chapter_sidequests.py', scope)
+        with patch.dict(sys.modules, {'ie_itemrt': items}):
+            self.assertTrue(recover(types.SimpleNamespace(drop_guids=['ogre']), 'AR1201', 'ogre', 'contract'))
+        items.transfer.assert_called_once_with(party[1], items.find.return_value)
+        driver.walk_party.assert_not_called()
+
     def setUp(self):
         toee = types.ModuleType('toee')
         names = ('stat_size stat_hp_current stat_hp_max obj_f_critter_reach obj_f_weapon_type '
