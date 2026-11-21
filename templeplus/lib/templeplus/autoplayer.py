@@ -3,6 +3,28 @@ import playtester
 from ui_time_event import UiTimeEvent
 
 autoplayer = None #type: Autoplayer
+import tpgui
+_set_goals = getattr(tpgui, 'set_autoplayer_goals', None)
+_last_goals = []
+_hud_error = False
+
+def update_goal_display():
+    global _last_goals, _hud_error
+    if not _set_goals or (autoplayer is None and not _last_goals):
+        return
+    try:
+        from autoplayer_hud import goal_lines
+        lines = goal_lines(autoplayer)
+        _hud_error = False
+    except Exception:
+        if not _hud_error:
+            import traceback
+            traceback.print_exc()
+        _hud_error = True
+        lines = []
+    if lines != _last_goals:
+        _set_goals(lines)
+        _last_goals = lines
 
 def play_new_game():
     print('gonna play a new game')
@@ -45,6 +67,7 @@ def advance_time(time_real):
         return
     UiTimeEvent.expire_events()
     UiTimeEvent.__is_advance_time__ = False
+    update_goal_display()
     return
 
 def check_main_menu():
@@ -56,6 +79,10 @@ def check_main_menu():
     return 1
 
 def reset():
+    global _last_goals
+    if _set_goals:
+        _set_goals([])
+    _last_goals = []
     # actually a bad place to do anything
     # UiTimeEvent.schedule( 1000 )
     UiTimeEvent.__first_after_reset__ = True

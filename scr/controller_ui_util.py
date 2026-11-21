@@ -66,13 +66,18 @@ def click_key_dlg_btn():
     
 def move_mouse_to_widget(wid):
     # type: (aui.TWidget)->None
-    # REVIEW PATCH (dist copy only): aim at the widget centre instead of its top-left corner
-    w = getattr(wid, 'width', None)
-    h = getattr(wid, 'height', None)
-    if not isinstance(w, int) or not isinstance(h, int) or w <= 0 or h <= 0:
-        w, h = 10, 10
-        if getattr(wid, 'name', '') == 'pc_creation.c 2048': # REVIEW PATCH: Begin Adventuring - the top-left (+5) misses the real hit rect under scaling
-            w, h = 120, 50 # legacy button wrapper exposes no size: nudge 5px inside so scaling round-off can't miss the rect
+    w = getattr(wid.wid, 'width', 0)
+    h = getattr(wid.wid, 'height', 0)
+    # Older builds omit some widget dimensions.
+    fallback_w, fallback_h = 10, 10
+    if wid.name == 'pc_creation.c 2048':
+        fallback_w, fallback_h = 120, 50
+    elif wid.source_uri == 'templeplus/ui/main_menu.json' and wid.is_button:
+        fallback_w, fallback_h = 400, 40
+    if w <= 0:
+        w = fallback_w
+    if h <= 0:
+        h = fallback_h
     move_mouse(wid.x + w//2, wid.y + h//2)
     return
 
@@ -244,11 +249,13 @@ def move_mouse(x,y):
     ''' in screenspace only; useful for UIs (esp. radial menu) '''
     import ctypes; SetCursorPos = ctypes.windll.user32.SetCursorPos
     # l,t,r,b = get_window_rect()
-    x,y   = tpgui.map_from_scene(x,y) # takes care of scaled windows
-    xs,ys = client_to_screen(x,y)
+    client_x, client_y = tpgui.map_from_scene(x,y)
+    xs,ys = client_to_screen(client_x, client_y)
 
     # print("Moving Mouse to: xs, ys", xs,ys)
     SetCursorPos(xs,ys)
+    # game.mouse_click uses the engine's cursor in scene coordinates.
+    game.mouse_move_to((x, y), 1)
     # mouse_event = ctypes.windll.user32.mouse_event
     return
 
