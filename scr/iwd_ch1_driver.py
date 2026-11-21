@@ -693,11 +693,10 @@ def walk_to_area(st, area):
 	return 0
 
 
-def targos_enemy(npc, include_dying=False):
+def targos_enemy(npc):
 	"""The converted scripts set ONF_KOS when an NPC becomes hostile to the party."""
 	return (npc.npc_flags_get() & ONF_KOS and npc not in game.party and npc.leader_get() == OBJ_HANDLE_NULL
-	        and not npc.object_flags_get() & (OF_OFF | OF_DONTDRAW | OF_CLICK_THROUGH)
-	        and (not npc.is_unconscious() or (include_dying and -10 < npc.stat_level_get(stat_hp_current) < 0)))
+	        and not npc.is_unconscious() and not npc.object_flags_get() & (OF_OFF | OF_DONTDRAW | OF_CLICK_THROUGH))
 
 
 def rally_before_fight(st, leader):
@@ -895,15 +894,13 @@ def step_crane(st):
 	if not items.find(box, '10gencrw'):
 		if carrier is None:
 			return fail("Jorun's wheel is missing from both the party and the crane")
-		# The crane occupies a walkable tile. A ray to the scenery on the
-		# carrier's own tile can be blocked even when the wheel is in reach.
-		if carrier.distance_to(box) > 8 or (carrier.location != box.location and not carrier.has_los(box)):
+		if carrier.distance_to(box) > 8 or not carrier.has_los(box):
 			if not hasattr(st, 'walk_start'):
 				st.walk_start = st.n
 				log('CRANE walking from %s to %s' % (location_to_axis(carrier.location), (x, y)))
 			if st.n - st.walk_start > 1500:
 				return fail('wheel carrier did not reach the crane at %s' % ((x, y),))
-			walk_party(st, (x, y), 0, carrier)
+			walk_party(st, (x, y), 2, carrier)
 			return 0
 		if box.container_flags_get() & OCOF_LOCKED:
 			return fail('the crane is locked before the wheel can be installed')
@@ -1335,8 +1332,7 @@ def gs_ch1(slot):
 				fail('combat stalled during ' + st.kind)
 		elif now >= getattr(st, 'next_combat_action', 0):
 			from new_game_controller import combat_action_handler
-			delay = combat_action_handler(slot, target_filter=targos_enemy, chapter_log=log,
-			                             practice=ST.get('practice'), pursue_raiders=st.kind == 'palisade')
+			delay = combat_action_handler(slot, target_filter=targos_enemy, chapter_log=log, practice=ST.get('practice'))
 			st.next_combat_action = time.time() + max(150, delay) / 1000.0
 		return 0
 	import chapter_levelup

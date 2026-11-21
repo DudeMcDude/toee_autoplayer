@@ -529,17 +529,17 @@ def chapter_combat_move(actor, destination, hourglass, threats=(), chapter_log=N
 		return False
 
 
-def combat_action_handler(slot, target_filter=None, chapter_log=None, practice=None, pursue_raiders=False):
+def combat_action_handler(slot, target_filter=None, chapter_log=None, practice=None):
 	
 	# Playtester.get_instance().interrupt()
 
-	def ranked_targets(obj, vlist, require_initiative=True):
+	def ranked_targets(obj, vlist):
 		tgt_priority = []
 		for tgt in vlist:
 			dummy = practice and tgt.id == practice[0]
 			if not dummy and ((target_filter is not None and not target_filter(tgt)) or tgt.is_friendly(obj)):
 				continue
-			if chapter_log and require_initiative and not dummy and not tgt.is_active_combatant():
+			if chapter_log and not dummy and not tgt.is_active_combatant():
 				continue
 			if tgt.is_unconscious():
 				continue
@@ -620,49 +620,11 @@ def combat_action_handler(slot, target_filter=None, chapter_log=None, practice=N
 		tpactions.cur_seq_reset(obj)
 	import chapter_combat
 	threats = chapter_combat.opponents(obj) if chapter_log else []
-	if pursue_raiders:
-		# The town defenders are neutral to the party and fight on its side.
-		threats = [enemy for enemy in threats if target_filter(enemy)]
 	targets = ranked_targets(obj, game.obj_list_vicinity(obj.location, OLC_NPC))
 	if chapter_log and not targets and not practice:
 		# Defenders can engage elsewhere on the palisade. Only pursue a
 		# revealed hostile that the engine has already put in initiative.
 		targets = ranked_targets(obj, game.obj_list_range(obj.location, 300, OLC_NPC))
-	if not targets and pursue_raiders:
-		# Allies can keep initiative running between scripted siege waves.
-		# Follow a revealed raider just as the chapter does outside combat.
-		nearby = game.obj_list_range(obj.location, 400, OLC_NPC)
-		raiders = ranked_targets(obj, nearby, False)
-		if raiders:
-			raider = min(raiders, key=obj.distance_to)
-			if obj.distance_to(raider) <= 45 and obj.has_los(raider):
-				targets = [raider]
-			else:
-				dest = location_to_axis(raider.location)
-				if chapter_combat_move(obj, dest, act_seq_cur.tb_status.hourglass_state, threats, chapter_log):
-					chapter_log('COMBAT %s advances toward %s at %s' % (obj, raider, dest))
-					return 500
-		else:
-			# IE's siege waits for actual deaths. A stabilized ToEE raider
-			# can remain unconscious in initiative indefinitely.
-			from iwd_ch1_driver import targos_enemy
-			dying = [npc for npc in nearby if npc.is_unconscious() and targos_enemy(npc, include_dying=True)
-			         and not npc.is_friendly(obj)]
-			if dying:
-				casualty = min(dying, key=obj.distance_to)
-				hourglass = act_seq_cur.tb_status.hourglass_state
-				if hourglass >= 4 and obj.distance_to(casualty) <= 5 and obj.has_los(casualty):
-					try:
-						obj.action_perform(D20A_COUP_DE_GRACE, casualty, 0)
-						if obj.is_performing() or tpactions.get_cur_seq().tb_status.hourglass_state < hourglass:
-							chapter_log('COMBAT %s performs a coup de grace on %s' % (obj, casualty))
-							return 1000
-					except RuntimeError:
-						tpactions.cur_seq_reset(obj)
-				elif obj.distance_to(casualty) > 5 and hourglass >= 1:
-					if chapter_combat_move(obj, location_to_axis(casualty.location), hourglass, threats, chapter_log):
-						return 500
-				targets = [casualty]
 	if chapter_log and targets:
 		slot.get_scheme_state()['battle_front'] = (obj.map, location_to_axis(targets[0].location))
 	if not targets: # end turn for now..

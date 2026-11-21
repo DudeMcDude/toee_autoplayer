@@ -138,11 +138,6 @@ def encounter(area, ident, ie_point, check, loot=None, archery=False):
             d.ST.pop('practice', None)
             return True
         training = ident in ('12kegmel','12kegarc_ar1200')
-        if archery and not any(pc.get_ammo_used() for pc in game.party if not pc.is_unconscious()):
-            if not stock_ammunition(st):
-                return False
-            if not any(pc.get_ammo_used() for pc in game.party if not pc.is_unconscious()):
-                return d.fail('no matching ammunition available for the archery wager')
         if not training and not getattr(st, 'prepared', False):
             if d.get_current_map() != d.area_map(area) and d.recover_after_battle(st, prepare=True):
                 return False
@@ -225,7 +220,6 @@ def encounter(area, ident, ie_point, check, loot=None, archery=False):
             attackers = [pc for pc in party if not pc.is_performing() and pc.has_los(target)]
             ranged = [pc for pc in attackers if pc.item_worn_at(item_wear_weapon_primary) and
                       pc.item_worn_at(item_wear_weapon_primary).obj_get_int(obj_f_weapon_flags) & OWF_RANGED_WEAPON
-                      and (not archery or pc.get_ammo_used())
                       and pc.distance_to(target) <= 60]
             melee = [pc for pc in attackers if pc not in ranged and pc.can_melee(target)]
             if ident == '12kegmel':
@@ -694,7 +688,7 @@ def targos_town(phase=None):
             encounter('I2AR1200','12kegmel',(2286,2185),flag('SPRITE_IS_DEADTRAINING_KEG',1)),
             dialogue('12weapon','I2AR1200',r'journal=\(7239,',OUTCOMES['training'])]),
         quest('archery', [
-            dialogue('12gable','I2AR1200',r'SetGlobal\(c, "Gable_Quest", "GLOBAL", 5\)',flag('Gable_Quest',1)),
+            dialogue('12gable','I2AR1200',r'journal=\(12737,',flag('Gable_Quest',1)),
             encounter('I2AR1200','12kegarc_ar1200',(3180,606),flag('SPRITE_IS_DEAD12KegArc',1),archery=True),
             dialogue('12gable','I2AR1200',r'journal=\(12738,',OUTCOMES['archery'])]),
         quest('firtha_cat', [quest_flag('12anson','I2AR1200','Anson_Cat',1),
