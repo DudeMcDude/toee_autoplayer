@@ -118,14 +118,18 @@ def recover_drop(st, area, ident, res):
                     sources.append((obj,item))
     if not sources:
         return False
-    source,item = min(sources,key=lambda pair: min(pc.distance_to(pair[0]) for pc in party))
-    pc = min(party,key=lambda member: member.distance_to(source))
-    if pc.distance_to(source) > 9 or not pc.has_los(source):
-        d.walk_party(st,location_to_axis(source.location),2,pc)
-    else:
-        getattr(ie_itemrt,'transfer',lambda holder,obj: holder.item_get(obj))(pc,item)
-        if has(res):
-            d.log('LOOT %s recovered by %s from %s' % (res,pc,source))
+    # A nearer party member can be behind a wall or on the far side of a corpse.
+    # Try everyone who can already see and reach the item before moving the party.
+    choices = [(pc, source, item) for source, item in sources for pc in party]
+    choices.sort(key=lambda choice: choice[0].distance_to(choice[1]))
+    for pc, source, item in choices:
+        if pc.distance_to(source) <= 9 and pc.has_los(source):
+            getattr(ie_itemrt, 'transfer', lambda holder, obj: holder.item_get(obj))(pc, item)
+            if has(res):
+                d.log('LOOT %s recovered by %s from %s' % (res, pc, source))
+                return True
+    pc, source, item = next((choice for choice in choices if choice[0].has_los(choice[1])), choices[0])
+    d.walk_party(st, location_to_axis(source.location), 1, pc)
     return True
 
 
