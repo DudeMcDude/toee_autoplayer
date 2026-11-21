@@ -641,14 +641,20 @@ def report():
 def gs_idle_forever(slot):
 	return 0
 
-def no_movies():
-	'''converted intro / chapter slides block the tour (a slide waits for its sound; under Wine on the box it never
-	ended): unless IWDAP_MOVIES=1 they are logged and skipped (ie_movies_rt is the converted module's only player)'''
-	if os.environ.get('IWDAP_MOVIES'):
-		return
+def no_movies(show=False):
+	'''Chapter runs show movies by default. The older tours retain their skip default.'''
+	movies = os.environ.get('IWDAP_MOVIES')
 	try:
 		import ie_movies_rt as M
 	except ImportError:
+		return
+	if not hasattr(M, '_autoplayer_playback'):
+		M._autoplayer_playback = (M.play, M.play_intro, getattr(M, 'prologue', None))
+	if movies == '1' or (show and movies != '0'):
+		M.play, M.play_intro = M._autoplayer_playback[:2]
+		if M._autoplayer_playback[2] is not None:
+			M.prologue = M._autoplayer_playback[2]
+		log('MOVIE playback enabled; chapter scenes use their normal playback')
 		return
 	def play(key):
 		log('MOVIE %s skipped (autoplayer; IWDAP_MOVIES=1 plays it)' % key); return 0
@@ -656,7 +662,12 @@ def no_movies():
 		if not game.global_vars[M.FLAG_VAR]:
 			game.global_vars[M.FLAG_VAR] = 1; log('MOVIE intro skipped (autoplayer)')
 		return 0
+	def prologue(slide):
+		play_intro()
+		return play(slide)
 	M.play = play; M.play_intro = play_intro
+	if M._autoplayer_playback[2] is not None:
+		M.prologue = prologue
 
 def setup_playtester(autoplayer, scenario=None):
 	if scenario:

@@ -1,6 +1,6 @@
 @echo off
 rem ie2toee quest-giver autoplayer tour on native Windows (the box runs tools/ieap_box.sh under Wine instead).
-rem Put this file next to the AUTOPLAYER TemplePlus.exe (a separate folder, not your normal Temple+ install).
+rem Put this file and ieap_chapter_process.js next to the AUTOPLAYER TemplePlus.exe.
 rem
 rem usage: ieap.bat iwd|iwd2|iwd-ch1|iwd2-ch1 SAVE [GAMEDIR]
 rem   iwd       IWD Easthaven tour   (AUTOPLAYER_SCENARIO=easthaven, module IWD)
@@ -9,6 +9,8 @@ rem   iwd-ch1   IWD new game -> prologue -> AR2000 (AUTOPLAYER_SCENARIO=iwd_ch1,
 rem             the driver starts the new game itself from the main menu with the pregenerated party. If the game
 rem             crashes on the way (known: on the AR1006 re-entry), it is relaunched once or twice from the autosave.
 rem   iwd2-ch1  IWD2 new game -> Shawford chain -> palisade -> Ulbrec (AUTOPLAYER_SCENARIO=iwd2_ch1, module ToEE). SAVE "menu".
+rem   Chapter runs pause 3-7.5 seconds per dialogue line and play movies normally.
+rem   Set IWDAP_MOVIES=0 to skip converted movies, or 1 to play them in older tours too.
 rem   SAVE     the save to load: its file name without extension, e.g. slot0007 for modules\IWD\Save\slot0007.tfaf;
 rem            or "menu": no autoload, load (or start) a game yourself and the tour begins once you are in it
 rem   GAMEDIR  optional game folder, e.g. "D:\GOG Games\ToEEWindale". Given: TemplePlus.ini's toeeDir/defaultModule
@@ -39,10 +41,28 @@ if not "%GAMEDIR%"=="" (
 )
 echo ieap: %GAME% (%AUTOPLAYER_SCENARIO%), module %MOD%, save %SAVE%, log %IWDAP_LOG%
 set /a TRY=0
+set "IWDAP_BATTLE_RETRIES=0"
+set "IWDAP_TOTAL_RETRIES=0"
+set "IWDAP_BATTLE_STEP="
+set "IWDAP_RESTART_FILE=%TEMP%\ieap-%GAME%-%RANDOM%-%RANDOM%.request"
 :run
 pushd "%~dp0"
+if /i "%AUTOPLAYER_SCENARIO:~-3%"=="ch1" goto chapterprocess
 start "" /wait TemplePlus.exe
 popd
+goto after
+:chapterprocess
+if not exist "%~dp0ieap_chapter_process.js" goto standalone
+cscript //nologo "%~dp0ieap_chapter_process.js"
+set "CHAPTER_RESULT=%ERRORLEVEL%"
+popd
+if "%CHAPTER_RESULT%"=="75" if exist "%IWDAP_RESTART_FILE%" goto battleretry
+goto checkchapter
+:standalone
+set "IWDAP_RESTART_FILE="
+start "" /wait TemplePlus.exe
+popd
+:checkchapter
 rem the chapter drivers: the game ended before DONE (a crash) -> relaunch from the autosave at the step that was running
 if /i not "%AUTOPLAYER_SCENARIO:~-3%"=="ch1" goto after
 findstr /b "DONE" "%IWDAP_LOG%" >nul 2>&1 && goto after
@@ -55,6 +75,19 @@ echo ieap: the game ended in step %STEP% before DONE: relaunch %TRY% from the au
 set "IWDAP_CH1_FROM=%STEP%"
 set "TP_AUTOLOAD=SlotAuto"
 copy /y "%IWDAP_LOG%" "%IWDAP_LOG%.try%TRY%" >nul
+goto run
+:battleretry
+for /f "usebackq tokens=2" %%s in ("%IWDAP_RESTART_FILE%") do set "IWDAP_CH1_FROM=%%s"
+del "%IWDAP_RESTART_FILE%"
+if not "%IWDAP_CH1_FROM%"=="%IWDAP_BATTLE_STEP%" set "IWDAP_BATTLE_RETRIES=0"
+if %IWDAP_BATTLE_RETRIES% geq 3 goto after
+if %IWDAP_TOTAL_RETRIES% geq 12 goto after
+set "IWDAP_BATTLE_STEP=%IWDAP_CH1_FROM%"
+set /a IWDAP_BATTLE_RETRIES+=1
+set /a IWDAP_TOTAL_RETRIES+=1
+set "TP_AUTOLOAD=IEAP_Chapter_%GAME:-ch1=%"
+copy /y "%IWDAP_LOG%" "%IWDAP_LOG%.battle%IWDAP_TOTAL_RETRIES%" >nul
+echo ieap: restarting at %IWDAP_CH1_FROM% from the last safe checkpoint
 goto run
 :after
 if not "%GAMEDIR%"=="" move /y "%INI%.ieap-backup" "%INI%" >nul

@@ -141,8 +141,10 @@ def setup_playtester(autoplayer):
 	#type: (Playtester)->None
 	autoplayer = autoplayer #type: ControllerBase
 	autoplayer.__logging__ = LOGGING_EN
-	from controller_console import ControllerConsole
-	autoplayer.console = ControllerConsole(autoplayer)
+	import tpgui
+	if not hasattr(tpgui, 'set_autoplayer_goals'):
+		from controller_console import ControllerConsole
+		autoplayer.console = ControllerConsole(autoplayer)
 
 	autoplayer.add_scheme( create_new_game_scheme(), 'new_game' )
 	autoplayer.add_scheme( create_true_neutral_scheme(), 'true_neutral_vig' )
@@ -433,17 +435,111 @@ def combat_handler(slot):
 	return
 
 
-def combat_action_handler(slot):
+# PathQueryFlags from TemplePlus/pathfinding.h. A walking route around an obstacle
+# cannot be used for a charge, even when the fighter can see the target.
+PQF_STRAIGHT_LINE_ONLY_FOR_SANS_NODE = 0x200
+PQF_DOORS_ARE_BLOCKING = 0x400
+PQF_DONT_USE_PATHNODES = 0x4000
+
+def try_charge(obj, targets, tb_status, attempted, threats=(), chapter_log=None):
+	if 'charge' in attempted or tb_status.hourglass_state < 4 or tb_status.flags & (TBSF_Movement | TBSF_1):
+		return None
+	if not (obj.stat_level_get(stat_level_fighter) or obj.stat_level_get(stat_level_barbarian)):
+		return None
+	attempted.add('charge')
+	if obj.can_melee(targets[0]) or obj.d20_query(Q_Prone):
+		return None
+	max_travel = 2 * obj.stat_level_get(stat_movement_speed)
+	flags = PQF_STRAIGHT_LINE_ONLY_FOR_SANS_NODE | PQF_DONT_USE_PATHNODES | PQF_DOORS_ARE_BLOCKING
+	for target in targets:
+		distance = obj.can_find_path_to_obj(target, flags)
+		if not 0 < distance <= max_travel:
+			continue
+		import chapter_combat
+		endpoint = obj.find_path_to_obj(target, flags)
+		if endpoint is None or not chapter_combat.allow_move(
+				obj, location_to_axis(endpoint.get_location()), threats, chapter_log):
+			continue
+		try:
+			obj.action_perform(D20A_CHARGE, target, 0)
+		except RuntimeError:
+			import tpactions
+			tpactions.cur_seq_reset(obj)
+			return None
+		import tpactions
+		if obj.is_performing() or tpactions.get_current_tb_actor() != obj or tpactions.get_cur_seq().tb_status.hourglass_state < 4:
+			return target
+		return None
+	return None
+
+def kit_healing_potions(pc):
+	import ie_itemrt
+	# The original quest bottles can share a native prototype with the starting kit.
+	names = ['potn08']
+	if '00potn04' in ie_itemrt.ITEMS:
+		from iwd_ch1_driver import V
+		names = ['00potn05']
+		if V('Reig_Quest') >= 2:
+			names.insert(0, '00potn04')
+	identities = [(8014, 8014)] + [(ie_itemrt.ITEMS[name]['p'], ie_itemrt.ITEMS[name].get('n'))
+	                              for name in names if name in ie_itemrt.ITEMS]
+	items = {it.id: it for it in ie_itemrt._inv(pc) if any(it.proto == proto for proto, desc in identities)}
+	return [it for proto, desc in identities for it in items.values()
+	        if it.proto == proto and (not desc or it.obj_get_int(ie_itemrt._field('obj_f_description')) == desc)]
+
+
+def kit_healing_potion(pc):
+	return next(iter(kit_healing_potions(pc)), None)
+
+
+def sleep_target(caster, enemies):
+	friends = [pc for pc in game.obj_list_vicinity(caster.location, OLC_CRITTERS)
+	           if pc in game.party or pc.is_friendly(caster)]
+	eligible = [enemy for enemy in enemies if not enemy.is_unconscious() and enemy.hit_dice_num <= 4
+	            and not enemy.d20_query_has_spell_condition(sp_Sleep)]
+	clusters = [(sum(t.distance_to(other) <= 10 for other in eligible),t) for t in eligible
+	            if caster.has_los(t) and all(t.distance_to(pc) > 12 for pc in friends)]
+	if clusters:
+		count,target = max(clusters,key=lambda pair: pair[0])
+		if count >= 2:
+			return target
+	return None
+
+
+def chapter_combat_move(actor, destination, hourglass, threats=(), chapter_log=None):
+	"""Take a reachable part of the route within the actor's remaining turn."""
+	import tpactions
+	from iwd_ch1_driver import walk_waypoint, local_waypoint
+	x, y = location_to_axis(actor.location)
+	tx, ty = walk_waypoint(actor, (x, y), destination)
+	dx, dy = tx - x, ty - y
+	stride = max(2, min(8, actor.stat_level_get(stat_movement_speed) // 3))
+	scale = min(1.0, float(stride) / max(abs(dx), abs(dy), 1))
+	point = local_waypoint(actor, (x, y), (x + int(round(dx * scale)), y + int(round(dy * scale))))
+	if point == (x, y):
+		return False
+	import chapter_combat
+	if not chapter_combat.allow_move(actor, point, threats, chapter_log):
+		return False
+	try:
+		actor.action_perform(D20A_MOVE, OBJ_HANDLE_NULL, location_from_axis(*point))
+		return actor.is_performing() or tpactions.get_cur_seq().tb_status.hourglass_state < hourglass
+	except RuntimeError:
+		tpactions.cur_seq_reset(actor)
+		return False
+
+
+def combat_action_handler(slot, target_filter=None, chapter_log=None, practice=None, pursue_raiders=False):
 	
 	# Playtester.get_instance().interrupt()
 
-	def select_target(obj):
-		vlist = game.obj_list_vicinity(obj.location, OLC_NPC)
-		best_tgt = OBJ_HANDLE_NULL
-		least_dist = 100000
+	def ranked_targets(obj, vlist, require_initiative=True):
 		tgt_priority = []
 		for tgt in vlist:
-			if tgt.is_friendly(obj):
+			dummy = practice and tgt.id == practice[0]
+			if not dummy and ((target_filter is not None and not target_filter(tgt)) or tgt.is_friendly(obj)):
+				continue
+			if chapter_log and require_initiative and not dummy and not tgt.is_active_combatant():
 				continue
 			if tgt.is_unconscious():
 				continue
@@ -467,14 +563,27 @@ def combat_action_handler(slot):
 			return dist + 100
 		
 		if len(tgt_priority) > 0:
-			tgt_priority.sort(key=sort_key)
+			if chapter_log:
+				state = slot.get_scheme_state()
+				ranged = obj_has_ranged_weapon(obj)
+				def priority(entry):
+					enemy, dist, hp = entry
+					in_range = dist < 60 if ranged else dist == 0
+					remaining = enemy.stat_level_get(stat_hp_current)
+					return (not obj.has_los(enemy), enemy.d20_query_has_spell_condition(sp_Sleep), not in_range,
+					        remaining if in_range else dist, enemy.id != state.get('focus_enemy'), hp, dist)
+				tgt_priority.sort(key=priority)
+				state['focus_enemy'] = tgt_priority[0][0].id
+			else:
+				tgt_priority.sort(key=sort_key)
 			print('possible targets: [distance, hp_pct]', tgt_priority)
-			return tgt_priority[0][0]
-		return OBJ_HANDLE_NULL #best_tgt
+		return [entry[0] for entry in tgt_priority]
 	
-	obj = game.leader
 	if not game.combat_is_active():
 		return 500
+	import tpactions
+	actor = tpactions.get_current_tb_actor()
+	obj = actor if chapter_log else game.leader
 	if not (obj in game.party):
 		return 500
 	# TODO charmed/confused PC.. 
@@ -498,31 +607,230 @@ def combat_action_handler(slot):
 		return is_ranged_weapon(weap)
 	
 
-	import tpactions
-	actor = tpactions.get_current_tb_actor()
 	if obj != actor: # delay
 		return 500
 	
 	act_seq_cur = tpactions.get_cur_seq()
-	tgt = select_target(obj)
-	if tgt == OBJ_HANDLE_NULL: # end turn for now..
+	if obj.is_performing():
+		return 500
+	if chapter_log:
+		# Mouse-hover previews can leave an unexecuted move or attack in the
+		# current sequence. action_perform appends to it, so clear it first.
+		# cur_seq_reset preserves the turn's remaining actions and movement flags.
+		tpactions.cur_seq_reset(obj)
+	import chapter_combat
+	threats = chapter_combat.opponents(obj) if chapter_log else []
+	if pursue_raiders:
+		# The town defenders are neutral to the party and fight on its side.
+		threats = [enemy for enemy in threats if target_filter(enemy)]
+	targets = ranked_targets(obj, game.obj_list_vicinity(obj.location, OLC_NPC))
+	if chapter_log and not targets and not practice:
+		# Defenders can engage elsewhere on the palisade. Only pursue a
+		# revealed hostile that the engine has already put in initiative.
+		targets = ranked_targets(obj, game.obj_list_range(obj.location, 300, OLC_NPC))
+	if not targets and pursue_raiders:
+		# Allies can keep initiative running between scripted siege waves.
+		# Follow a revealed raider just as the chapter does outside combat.
+		nearby = game.obj_list_range(obj.location, 400, OLC_NPC)
+		raiders = ranked_targets(obj, nearby, False)
+		if raiders:
+			raider = min(raiders, key=obj.distance_to)
+			if obj.distance_to(raider) <= 45 and obj.has_los(raider):
+				targets = [raider]
+			else:
+				dest = location_to_axis(raider.location)
+				if chapter_combat_move(obj, dest, act_seq_cur.tb_status.hourglass_state, threats, chapter_log):
+					chapter_log('COMBAT %s advances toward %s at %s' % (obj, raider, dest))
+					return 500
+		else:
+			# IE's siege waits for actual deaths. A stabilized ToEE raider
+			# can remain unconscious in initiative indefinitely.
+			from iwd_ch1_driver import targos_enemy
+			dying = [npc for npc in nearby if npc.is_unconscious() and targos_enemy(npc, include_dying=True)
+			         and not npc.is_friendly(obj)]
+			if dying:
+				casualty = min(dying, key=obj.distance_to)
+				hourglass = act_seq_cur.tb_status.hourglass_state
+				if hourglass >= 4 and obj.distance_to(casualty) <= 5 and obj.has_los(casualty):
+					try:
+						obj.action_perform(D20A_COUP_DE_GRACE, casualty, 0)
+						if obj.is_performing() or tpactions.get_cur_seq().tb_status.hourglass_state < hourglass:
+							chapter_log('COMBAT %s performs a coup de grace on %s' % (obj, casualty))
+							return 1000
+					except RuntimeError:
+						tpactions.cur_seq_reset(obj)
+				elif obj.distance_to(casualty) > 5 and hourglass >= 1:
+					if chapter_combat_move(obj, location_to_axis(casualty.location), hourglass, threats, chapter_log):
+						return 500
+				targets = [casualty]
+	if chapter_log and targets:
+		slot.get_scheme_state()['battle_front'] = (obj.map, location_to_axis(targets[0].location))
+	if not targets: # end turn for now..
+		if chapter_log:
+			state = slot.get_scheme_state()
+			front = state.get('battle_front')
+			stamp = (game.combat_turn, obj.id)
+			if front and front[0] == obj.map and state.get('regrouped') != stamp:
+				pos = location_to_axis(obj.location)
+				if max(abs(pos[0]-front[1][0]), abs(pos[1]-front[1][1])) > 10:
+					state['regrouped'] = stamp
+					if chapter_combat_move(obj, front[1], act_seq_cur.tb_status.hourglass_state, threats, chapter_log):
+						chapter_log('COMBAT %s moves to rejoin the party' % obj)
+						return 500
 		print('No target, ending turn')
 		press_space()
 		return 500
+	tgt = targets[0]
 
-	if obj.is_performing():
-		return 500
 	is_caster = obj_is_caster(obj)
 	has_ranged = obj_has_ranged_weapon(obj)
+	on_dummy = practice and tgt.id == practice[0]
+	if on_dummy and bool(practice[1]) != bool(has_ranged):
+		press_space()
+		return 300
 
 	def should_cast():
 		if not is_caster:
 			return False
-		if act_seq_cur.tb_status.hourglass_state < 4: # Full action bar
+		if act_seq_cur.tb_status.hourglass_state < 2: # A standard action can remain after moving.
 			return False
 		if obj.d20_query_has_spell_condition(sp_Silence_Hit):
 			return False
 		return True
+	if chapter_log:
+		stamp = (game.combat_turn, obj.id)
+		tactics = slot.get_scheme_state()
+		if tactics.get('chapter_turn') != stamp:
+			tactics.update(chapter_turn=stamp, attempted=set())
+		attempted = tactics['attempted']
+		if (has_ranged or should_cast()) and not on_dummy and 'step_back' not in attempted and act_seq_cur.tb_status.hourglass_state >= 2:
+			attempted.add('step_back')
+			if chapter_combat.five_foot_step(obj, threats, act_seq_cur.tb_status):
+				chapter_log('COMBAT %s takes a five-foot step away from melee' % obj)
+				return 500
+		threatened = any(enemy.can_melee(obj) for enemy in threats)
+		if not on_dummy and should_cast() and not threatened:
+			hurt = [pc for pc in game.party if pc.stat_level_get(stat_hp_current) > -10
+			        and obj_percent_hp(pc) < 65 and obj.has_los(pc)
+			        and obj.distance_to(pc) <= 5]
+			for preferred in (spell_cure_moderate_wounds, spell_cure_light_wounds, spell_cure_minor_wounds,
+			                  spell_bless, spell_sleep, spell_scorching_ray, spell_melfs_acid_arrow, spell_magic_missile):
+				healing = preferred in (spell_cure_moderate_wounds, spell_cure_light_wounds, spell_cure_minor_wounds)
+				victim = tgt
+				if preferred == spell_bless:
+					if obj.d20_query_has_spell_condition(sp_Bless) or len(targets) < 3:
+						continue
+					victim = obj
+				if healing:
+					patients = hurt if preferred != spell_cure_minor_wounds else [
+					    p for p in hurt if p.stat_level_get(stat_hp_current) < 0]
+					if not patients:
+						continue
+					victim = min(patients,key=lambda p: (p.stat_level_get(stat_hp_current) >= 0,
+					                                     p.stat_level_get(stat_hp_current)))
+				if preferred == spell_sleep:
+					victim = sleep_target(obj, targets)
+					if victim is None:
+						continue
+				for spell in obj.spells_memorized + obj.spells_known:
+					if spell.spell_enum != preferred or not obj_can_cast(obj, preferred, spell.spell_class, spell.spell_level):
+						continue
+					if not healing and obj.distance_to(victim) > tpdp.SpellEntry(preferred).get_spell_range_exact(spell.spell_level, obj):
+						continue
+					if preferred in attempted or not obj.has_los(victim):
+						continue
+					attempted.add(preferred)
+					chapter_log('COMBAT %s casts %s on %s' % (obj, spell, victim))
+					obj.cast_spell(preferred, victim)
+					return 1000
+		hourglass = act_seq_cur.tb_status.hourglass_state
+		if not on_dummy and hourglass >= 2 and 'potion' not in attempted and not threatened:
+			down = [pc for pc in game.party if -10 < pc.stat_level_get(stat_hp_current) < 0
+			        and obj.distance_to(pc) <= 5 and obj.has_los(pc)]
+			patient = min(down,key=lambda pc: pc.stat_level_get(stat_hp_current)) if down else obj
+			if down or obj_percent_hp(obj) < 55:
+				potion = kit_healing_potion(obj)
+				if potion:
+					attempted.add('potion')
+					if obj.use_item(potion, patient) == 0:
+						chapter_log('COMBAT %s uses a healing potion on %s' % (obj,patient))
+						return 1000
+					tpactions.cur_seq_reset(obj)
+			if down and 'first_aid' not in attempted and tactics.get('treated') != (patient.id,patient.stat_level_get(stat_hp_current)):
+				attempted.add('first_aid')
+				try:
+					obj.action_perform(D20A_HEAL, patient, 0)
+					if obj.is_performing():
+						tactics['treated'] = (patient.id,patient.stat_level_get(stat_hp_current))
+						chapter_log('COMBAT %s attempts first aid on %s' % (obj,patient))
+						return 1000
+				except RuntimeError:
+					tpactions.cur_seq_reset(obj)
+			if not down and 'rescue_move' not in attempted and kit_healing_potion(obj):
+				dying = [p for p in game.party if -10 < p.stat_level_get(stat_hp_current) < 0 and
+				         5 < obj.distance_to(p) <= obj.stat_level_get(stat_movement_speed) + 5]
+				if dying:
+					patient = min(dying,key=lambda p: p.stat_level_get(stat_hp_current))
+					x,y = location_to_axis(patient.location)
+					sx,sy = location_to_axis(obj.location)
+					adjacent = sorted(((x+dx,y+dy) for dx,dy in ((-1,0),(1,0),(0,1),(0,-1))),
+					                  key=lambda p: (p[0]-sx)**2+(p[1]-sy)**2)
+					attempted.add('rescue_move')
+					for point in adjacent:
+						if not debug.pathto(obj,*point):
+							continue
+						if not chapter_combat.allow_move(obj, point, threats, chapter_log, rescue=True):
+							continue
+						try:
+							obj.action_perform(D20A_MOVE,OBJ_HANDLE_NULL,location_from_axis(*point))
+							if obj.is_performing():
+								chapter_log('COMBAT %s moves to give %s a potion' % (obj,patient))
+								return 500
+						except RuntimeError:
+							tpactions.cur_seq_reset(obj)
+						break
+		if not has_ranged:
+			if 'step_forward' not in attempted and hourglass >= 2:
+				attempted.add('step_forward')
+				if chapter_combat.five_foot_step(obj, threats, act_seq_cur.tb_status, tgt):
+					chapter_log('COMBAT %s takes a five-foot step into melee with %s' % (obj, tgt))
+					return 500
+			charged = try_charge(obj, targets, act_seq_cur.tb_status, attempted, threats, chapter_log)
+			if charged is not None:
+				chapter_log('COMBAT %s charges %s with %s' % (obj, charged, obj.item_worn_at(3)))
+				return 1000
+		# Unspecified Attack automatically adds a move when melee is out of reach.
+		# Submit movement separately so it passes the same threat checks as fallback moves.
+		range_limit = max(5, obj.item_worn_at(item_wear_weapon_primary).obj_get_int(obj_f_weapon_range)) if has_ranged else 0
+		can_attack_here = (obj.has_los(tgt) and not threatened and obj.distance_to(tgt) <= range_limit) if has_ranged else obj.can_melee(tgt)
+		if hourglass >= 2 and 'attack' not in attempted and can_attack_here:
+			attempted.add('attack')
+			try:
+				obj.action_perform(D20A_UNSPECIFIED_ATTACK, tgt, 0)
+				if obj.is_performing() or tpactions.get_cur_seq().tb_status.hourglass_state < hourglass:
+					chapter_log('COMBAT %s attacks %s with %s' % (obj, tgt, obj.item_worn_at(3)))
+					return 1000
+			except RuntimeError:
+				tpactions.cur_seq_reset(obj)
+		distance = obj.distance_to(tgt)
+		# A crossbow user can have movement left after a shot. Keep that firing
+		# position while the target is visible and within one range increment.
+		in_firing_position = has_ranged and obj.has_los(tgt) and distance <= range_limit
+		if hourglass >= 1 and 'move' not in attempted and not obj.can_melee(tgt) and not in_firing_position:
+			attempted.add('move')
+			if chapter_combat_move(obj, location_to_axis(tgt.location), hourglass, threats, chapter_log):
+				attempted.discard('attack')
+				return 1000
+		if threatened and hourglass >= 2 and 'defend' not in attempted:
+			attempted.add('defend')
+			try:
+				obj.action_perform(D20A_TOTAL_DEFENSE, OBJ_HANDLE_NULL, 0)
+				chapter_log('COMBAT %s uses total defense while threatened' % obj)
+				return 500
+			except RuntimeError:
+				tpactions.cur_seq_reset(obj)
+		press_space()
+		return 300
 	if is_caster:
 		# try cast
 		if should_cast():
