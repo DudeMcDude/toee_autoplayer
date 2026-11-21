@@ -64,8 +64,6 @@ def goal_lines(player):
             parents.append('Reload the checkpoint')
         elif state.get('scene_started'):
             parents.append('Watch the cutscene')
-        elif state.get('cave_regroup'):
-            parents.append('Regroup and heal at the cave entrance')
         elif state.get('camp'):
             parents.append('Rest and recover')
         elif state.get('walking_to'):

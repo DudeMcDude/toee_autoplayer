@@ -702,6 +702,7 @@ def targos_enemy(npc, include_dying=False):
 
 def rally_before_fight(st, leader):
 	"""Wait for stragglers before the front line advances on another group of enemies."""
+	import debug
 	x,y = location_to_axis(leader.location)
 	behind = [pc for pc in game.party if not pc.is_unconscious() and pc.distance_to(leader) > 23]
 	if not behind:
@@ -719,13 +720,6 @@ def rally_before_fight(st, leader):
 	if now < getattr(st, 'rally_order_at', 0):
 		return True
 	st.rally_order_at = now + 1
-	gather_at(behind, (x, y))
-	return True
-
-
-def gather_at(behind, point):
-	import debug
-	x,y = point
 	for pc in behind:
 		start = location_to_axis(pc.location)
 		near = [(x+dx,y+dy) for dx,dy in ((-2,0),(2,0),(0,-2),(0,2),(-2,-2),(2,2))]
@@ -733,39 +727,7 @@ def gather_at(behind, point):
 		goal = next((p for p in near if debug.pathto(pc,*p)),(x,y))
 		wx,wy = walk_waypoint(pc,start,goal)
 		pc.run_to(location_from_axis(int(wx),int(wy)))
-
-
-def regroup_at_cave_entrance(st):
-	"""Hold the next quest action until the party is together and recovered."""
-	regroup = ST['cave_regroup']
-	x, y = regroup['point']
-	living = [pc for pc in game.party if not pc.is_dead_or_destroyed()]
-	now = time.time()
-	behind = []
-	for pc in living:
-		px, py = location_to_axis(pc.location)
-		if (px-x)**2 + (py-y)**2 > 16:
-			behind.append(pc)
-	if now - regroup['start'] > 40:
-		fail('party could not regroup and heal at the cave entrance')
-		return True
-	if behind and now >= regroup.get('order_at', 0):
-		gather_at([pc for pc in behind if not pc.is_unconscious()], (x,y))
-		regroup['order_at'] = now + 1
-	hp = [(pc.stat_level_get(stat_hp_current), pc.stat_level_get(stat_hp_max)) for pc in living]
-	if any(cur < maximum for cur, maximum in hp):
-		recover_after_battle(st, heal_only=True)
-	if behind or any(cur < maximum for cur, maximum in hp):
-		regroup.pop('ready_at', None)
-		return True
-	# Leave a visible beat after the last straggler arrives before picking a target.
-	if now < regroup.setdefault('ready_at', now + 3):
-		return True
-	log('REGROUP ready at %s after %.1fs; all %d survivors within 4 tiles; HP %s' %
-	    ((x,y), now-regroup['start'], len(living), hp))
-	del ST['cave_regroup']
-	ST['cave_entrance_recovered'] = True
-	return False
+	return True
 
 
 def step_fight(st, area, flag):
@@ -895,8 +857,6 @@ def step_crane(st):
 	if not items.find(box, '10gencrw'):
 		if carrier is None:
 			return fail("Jorun's wheel is missing from both the party and the crane")
-		# The crane occupies a walkable tile. A ray to the scenery on the
-		# carrier's own tile can be blocked even when the wheel is in reach.
 		if carrier.distance_to(box) > 8 or (carrier.location != box.location and not carrier.has_los(box)):
 			if not hasattr(st, 'walk_start'):
 				st.walk_start = st.n
@@ -1064,7 +1024,7 @@ def camping_button(camp, identifier):
 	return None
 
 
-def recover_after_battle(st, prepare=False, heal_only=False):
+def recover_after_battle(st, prepare=False):
 	"""Camp through the normal UI after a costly battle in a cleared location."""
 	import controller_ui_util as ui
 	import time
@@ -1073,18 +1033,18 @@ def recover_after_battle(st, prepare=False, heal_only=False):
 	if camp is None:
 		check_slots = ST.pop('check_new_spells',False) or prepare or ST.get('after_battle') or st.n == 0
 		slots = unfilled_spell_slots() if check_slots else []
-		if not heal_only and ST.get('last_camp') == (get_current_map(), hp):
+		if ST.get('last_camp') == (get_current_map(), hp):
 			return False
 		hurt = any(-10 < h < .75 * pc.stat_level_get(stat_hp_max) for h,pc in zip(hp,game.party))
 		from controller_callbacks_common import obj_can_cast
-		if not heal_only and not hurt and not slots:
+		if not hurt and not slots:
 			if not prepare and not ST.get('after_battle') and not (st.n == 0 and st.kind in (
 			        'grisella','apsel','damien','gaspar','dock_houses','docks','phaen','palisade')):
 				return False
 			if not any(s.is_used_up() for pc in game.party for s in pc.spells_memorized if s.spell_level == 1):
 				return False
-		if dlg.is_engaged() or (not heal_only and any(targos_enemy(o) and game.leader.distance_to(o) < 45
-		                           for o in game.obj_list_vicinity(game.leader.location, OLC_NPC))):
+		if dlg.is_engaged() or any(targos_enemy(o) and game.leader.distance_to(o) < 45
+		                           for o in game.obj_list_vicinity(game.leader.location, OLC_NPC)):
 			return False
 		healer = next((p for p in game.party if not p.is_unconscious() and any(
 			s.spell_enum == spell_cure_light_wounds and obj_can_cast(p, s.spell_enum, s.spell_class, s.spell_level)
@@ -1104,13 +1064,13 @@ def recover_after_battle(st, prepare=False, heal_only=False):
 				return True
 		import random_encounter
 		sleep_status = random_encounter.can_sleep()
-		if not heal_only and sleep_status == SLEEP_DANGEROUS and not hurt:
+		if sleep_status == SLEEP_DANGEROUS and not hurt:
 			# A fully mobile party can finish the trail and prepare spells
 			# back in town without rolling an extra wilderness encounter.
 			ST['last_camp'] = (get_current_map(), hp)
 			log('CAMP postponing rest on dangerous map %d, party HP %s' % (get_current_map(), hp))
 			return False
-		no_rest = heal_only or sleep_status in (SLEEP_PASS_TIME_ONLY, SLEEP_IMPOSSIBLE)
+		no_rest = sleep_status in (SLEEP_PASS_TIME_ONLY, SLEEP_IMPOSSIBLE)
 		if no_rest or min(hp) < 1 or ST.get('camp_unavailable') == get_current_map():
 			from new_game_controller import kit_healing_potion
 			if time.time() < ST.get('heal_wait',0):
@@ -1280,15 +1240,6 @@ def gs_ch1(slot):
 		return fail('party could not recover during %s, HP %s' % (st.kind,hp))
 	if in_combat:
 		import tpactions
-		if (not getattr(st, 'combat_ticks', 0) and GAME['g'] == 'iwd' and st.kind == 'gaspar'
-		    and not ST.get('cave_entrance_recovered') and get_current_map() == area_map('AR1201')):
-			import ie_travel_data
-			x,y = ie_travel_data.AREAS['AR1201']['entrances']['FR1200'][:2]
-			party_tiles = [location_to_axis(pc.location) for pc in game.party if not pc.is_unconscious()]
-			if party_tiles:
-				rear = min(party_tiles, key=lambda p: (p[0]-x)**2 + (p[1]-y)**2)
-				if (rear[0]-x)**2 + (rear[1]-y)**2 <= 14**2:
-					st.cave_rally_point = rear
 		if hasattr(st,'looting'):
 			del st.looting
 		actor = tpactions.get_current_tb_actor()
@@ -1346,15 +1297,9 @@ def gs_ch1(slot):
 		log('COMBAT ended on map %d, party HP %s' % (get_current_map(), [pc.stat_level_get(stat_hp_current) for pc in game.party]))
 		slot.get_scheme_state().pop('battle_front', None)
 		ST['after_battle'] = True
-		if hasattr(st, 'cave_rally_point'):
-			ST['cave_regroup'] = {'point': st.cave_rally_point, 'start': time.time()}
-			log('REGROUP gathering at the cave entrance near %s' % (st.cave_rally_point,))
-			del st.cave_rally_point
 		ST.pop('last_camp',None)
 	st.combat_ticks = 0
 	st.last_turn = None
-	if ST.get('cave_regroup') and regroup_at_cave_entrance(st):
-		return 0
 	if ST.get('after_battle') and st.kind in ('docks','vellum','phaen','damien','gaspar'):
 		drops = {'AR1000': ('goblinbowelitequ','fish'), 'AR1201': ('ogre','contract'), 'I2AR1007': ('10rukwu','10vellum')}
 		area = area_of(get_current_map())
