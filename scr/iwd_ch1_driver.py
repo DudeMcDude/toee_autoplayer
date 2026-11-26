@@ -74,16 +74,27 @@ _dialogue_lengths = {}
 
 
 def dialogue_delay(sid, line):
-	"""Give every displayed NPC line a reading pause, capped for long speeches."""
+	"""Allow time to read the line and to hear its converted voice clip."""
 	if sid not in _dialogue_lengths:
-		paths = glob.glob(os.path.join(E.find_core(), 'dlg', '%05d*.dlg' % sid))
+		core = os.path.normpath(E.find_core())
+		paths = glob.glob(os.path.join(core, 'dlg', '%05d*.dlg' % sid))
 		lengths = {}
 		if paths:
+			converted = core.lower().endswith('_core') and os.path.basename(paths[0]).lower().startswith('%05die_' % sid)
 			with open(paths[0]) as source:
-				for match in re.finditer(r'^\{(\d+)\}\{([^}]*)\}', source.read(), re.M):
-					lengths[int(match.group(1))] = len(match.group(2))
+				for row in source:
+					fields = re.findall(r'\{([^}]*)\}', row)
+					if len(fields) < 2 or not fields[0].isdigit():
+						continue
+					delay = min(7.5, max(3.0, len(fields[1]) / 45.0))
+					if converted and len(fields) > 4 and not fields[3] and fields[4].isdigit():
+						# ie_dialogue encodes these loose NPC clips at a fixed 64 kbit/s.
+						voice = os.path.join(core[:-5], 'sound', 'speech', '%05d' % sid, 'v%d_m.mp3' % int(fields[4]))
+						if os.path.isfile(voice):
+							delay = max(delay, os.path.getsize(voice) / 8000.0 + 0.25)
+					lengths[int(fields[0])] = delay
 		_dialogue_lengths[sid] = lengths
-	return min(7.5, max(3.0, _dialogue_lengths[sid].get(line, 0) / 45.0))
+	return _dialogue_lengths[sid].get(line, 3.0)
 
 def ch1_dialog_handler(slot):
 	'''Pause on each line, then reply on the shortest path to the step's goal.'''

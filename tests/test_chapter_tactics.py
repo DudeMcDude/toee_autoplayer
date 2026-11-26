@@ -250,6 +250,22 @@ class DialogueTests(unittest.TestCase):
         self.assertEqual(self.tick(None), 3000)
         self.assertEqual(self.replies, [0])
 
+    def test_converted_voice_can_outlast_the_reading_pause(self):
+        import glob
+        import re
+        with tempfile.TemporaryDirectory() as tmp:
+            core = Path(tmp) / 'IWD_core'
+            (core / 'dlg').mkdir(parents=True)
+            (core / 'dlg/00001ie_npc.dlg').write_text(
+                '{10}{Greetings.}{Greetings.}{}{30}{}{}\n{20}{Welcome.}{Welcome.}{}{40}{}{}\n')
+            speech = Path(tmp) / 'IWD/sound/speech/00001'
+            speech.mkdir(parents=True)
+            (speech / 'v30_m.mp3').write_bytes(bytes(80000))
+            ns = dict(os=os, glob=glob, re=re, E=types.SimpleNamespace(find_core=lambda: str(core)), _dialogue_lengths={})
+            delay = function_from_file('dialogue_delay', 'iwd_ch1_driver.py', ns)
+            self.assertAlmostEqual(delay(1, 10), 10.25)
+            self.assertEqual(delay(1, 20), 3.0)
+
     def test_same_line_reply_is_paced_again(self):
         self.tick(None)
         self.now = 3
