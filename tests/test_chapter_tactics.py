@@ -139,6 +139,22 @@ class MovementTests(unittest.TestCase):
         self.assertFalse(self.tactics.five_foot_step(self.actor, [], self.status, Actor(2, 0)))
         self.assertEqual(self.actor.actions, [])
 
+    def test_step_makes_progress_inside_a_giants_reach(self):
+        giant = Actor(7, 0)
+        giant.can_melee = lambda target: True
+        self.assertTrue(self.tactics.five_foot_step(self.actor, [giant], self.status, giant))
+        self.assertLess(giant.distance_to(self.actor.actions[0][2]), giant.distance_to(self.actor.location))
+
+    def test_risky_approach_must_close_on_the_single_threat(self):
+        giant = Actor(6, 0)
+        giant.can_melee = lambda target: True
+        allow = self.tactics.allow_move
+        self.assertTrue(allow(self.actor, (3, 0), [giant], engage=giant))
+        self.assertFalse(allow(self.actor, (-3, 0), [giant], engage=giant))
+        self.assertFalse(allow(self.actor, (3, 0), [giant, Actor(2, 0)], engage=giant))
+        self.actor.hp = 10
+        self.assertFalse(allow(self.actor, (3, 0), [giant], engage=giant))
+
     def test_no_second_step_or_step_after_moving(self):
         for flag in (1, 2):
             self.status.flags = flag

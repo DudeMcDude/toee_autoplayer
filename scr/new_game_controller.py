@@ -506,7 +506,7 @@ def sleep_target(caster, enemies):
 	return None
 
 
-def chapter_combat_move(actor, destination, hourglass, threats=(), chapter_log=None, waypoint=None):
+def chapter_combat_move(actor, destination, hourglass, threats=(), chapter_log=None, waypoint=None, engage=None):
 	"""Take a reachable part of the route within the actor's remaining turn."""
 	import tpactions
 	from iwd_ch1_driver import walk_waypoint, local_waypoint
@@ -519,7 +519,7 @@ def chapter_combat_move(actor, destination, hourglass, threats=(), chapter_log=N
 	if point == (x, y):
 		return False
 	import chapter_combat
-	if not chapter_combat.allow_move(actor, point, threats, chapter_log):
+	if not chapter_combat.allow_move(actor, point, threats, chapter_log, engage=engage):
 		return False
 	try:
 		actor.action_perform(D20A_MOVE, OBJ_HANDLE_NULL, location_from_axis(*point))
@@ -724,8 +724,12 @@ def combat_action_handler(slot, target_filter=None, chapter_log=None, practice=N
 			if chapter_combat.five_foot_step(obj, threats, act_seq_cur.tb_status):
 				chapter_log('COMBAT %s takes a five-foot step away from melee' % obj)
 				return 500
-		threatened = any(enemy.can_melee(obj) for enemy in threats)
-		if not on_dummy and should_cast() and not threatened:
+		close_threats = [enemy for enemy in threats if enemy.can_melee(obj)]
+		threatened = bool(close_threats)
+		# After trying a safe step, a healthy adventurer can risk one reaction
+		# to cast or shoot. Otherwise a single reach weapon can pin the whole party.
+		can_risk_attack = len(close_threats) == 1 and obj_percent_hp(obj) >= 75 and obj.stat_level_get(stat_hp_current) > 20
+		if not on_dummy and should_cast() and (not threatened or can_risk_attack):
 			hurt = [pc for pc in game.party if pc.stat_level_get(stat_hp_current) > -10
 			        and obj_percent_hp(pc) < 65 and obj.has_los(pc)
 			        and obj.distance_to(pc) <= 5]
@@ -819,7 +823,7 @@ def combat_action_handler(slot, target_filter=None, chapter_log=None, practice=N
 		# Unspecified Attack automatically adds a move when melee is out of reach.
 		# Submit movement separately so it passes the same threat checks as fallback moves.
 		range_limit = max(5, obj.item_worn_at(item_wear_weapon_primary).obj_get_int(obj_f_weapon_range)) if has_ranged else 0
-		can_attack_here = (obj.has_los(tgt) and not threatened and obj.distance_to(tgt) <= range_limit) if has_ranged else obj.can_melee(tgt)
+		can_attack_here = (obj.has_los(tgt) and (not threatened or can_risk_attack) and obj.distance_to(tgt) <= range_limit) if has_ranged else obj.can_melee(tgt)
 		if weapon_ready and hourglass >= 2 and 'attack' not in attempted and can_attack_here:
 			attempted.add('attack')
 			try:
@@ -835,7 +839,7 @@ def combat_action_handler(slot, target_filter=None, chapter_log=None, practice=N
 		in_firing_position = has_ranged and obj.has_los(tgt) and distance <= range_limit
 		if hourglass >= 1 and 'move' not in attempted and not obj.can_melee(tgt) and not in_firing_position:
 			attempted.add('move')
-			if chapter_combat_move(obj, location_to_axis(tgt.location), hourglass, threats, chapter_log, waypoint):
+			if chapter_combat_move(obj, location_to_axis(tgt.location), hourglass, threats, chapter_log, waypoint, tgt if not has_ranged else None):
 				attempted.discard('attack')
 				return 1000
 		if not end_turn and threatened and hourglass >= 2 and 'defend' not in attempted:
