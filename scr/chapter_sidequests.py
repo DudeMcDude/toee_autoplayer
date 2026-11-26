@@ -118,18 +118,17 @@ def recover_drop(st, area, ident, res):
                     sources.append((obj,item))
     if not sources:
         return False
-    # A nearer party member can be behind a wall or on the far side of a corpse.
-    # Try everyone who can already see and reach the item before moving the party.
     choices = [(pc, source, item) for source, item in sources for pc in party]
-    choices.sort(key=lambda choice: choice[0].distance_to(choice[1]))
-    for pc, source, item in choices:
-        if pc.distance_to(source) <= 9 and pc.has_los(source):
-            getattr(ie_itemrt, 'transfer', lambda holder, obj: holder.item_get(obj))(pc, item)
-            if has(res):
-                d.log('LOOT %s recovered by %s from %s' % (res, pc, source))
-                return True
-    pc, source, item = next((choice for choice in choices if choice[0].has_los(choice[1])), choices[0])
-    d.walk_party(st, location_to_axis(source.location), 1, pc)
+    pc,source,item = min(choices, key=lambda c: (not (c[0].distance_to(c[1]) <= 9 and c[0].has_los(c[1])),
+                                                 c[0].distance_to(c[1])))
+    if pc.distance_to(source) > 9 or not pc.has_los(source):
+        # At two tiles the feet-based reach check can still fail. Approach
+        # the body itself if an adjacent tile also has no line of sight.
+        d.walk_party(st,location_to_axis(source.location),1 if pc.has_los(source) else 0,pc)
+    else:
+        getattr(ie_itemrt,'transfer',lambda holder,obj: holder.item_get(obj))(pc,item)
+        if has(res):
+            d.log('LOOT %s recovered by %s from %s' % (res,pc,source))
     return True
 
 
@@ -253,21 +252,32 @@ def encounter(area, ident, ie_point, check, loot=None, archery=False):
     return run
 
 
-def container_item(area, box_name, item):
+def container_item(area, box_name, item, require_click=False):
     def run(st):
         import ie_itemrt
         d = driver()
         if has(item):
             return True
+        if require_click:
+            st.require_click = True
         if not arrive(st, area) or st.n % 10 != 1:
             return False
         containers = ie_itemrt.CONTAINERS.get(area, ie_itemrt.CONTAINERS.get(area[-6:], []))
-        spec = next(c for c in containers if c['name'].lower() == box_name.lower())
+        matches = [c for c in containers if c['name'].lower() == box_name.lower()]
+        spec = next((c for c in matches if any(res == item for res, qty in c.get('items', []))), None)
+        if spec is None:
+            if len(matches) != 1:
+                return d.fail('could not locate %s in %s (%s)' % (item, box_name, area))
+            spec = matches[0]
         x, y = map(int, spec['toee'])
         boxes = [b for b in game.obj_list_vicinity(location_from_axis(x,y), OLC_CONTAINER)
                  if b.proto == spec['proto'] and location_to_axis(b.location) == (x,y)]
+        if len(boxes) > 1:
+            # Distinct IE interaction points can fall on the same ToEE tile.
+            boxes = [b for b in boxes if ie_itemrt.find(b, item)]
         if len(boxes) != 1:
-            return d.fail('missing container ' + box_name)
+            return d.fail('expected one %s for %s at %s in %s, found %d' %
+                          (box_name, item, (x, y), area, len(boxes)))
         box = boxes[0]
         party = [pc for pc in game.party if not pc.is_unconscious()]
         pc = min(party, key=lambda member: member.distance_to(box))
@@ -334,6 +344,30 @@ def ammunition(pc):
     stacks = {item.id: item for item in ie_itemrt._inv(pc) if item.type == obj_t_ammo
               and item.obj_get_int(obj_f_ammo_type) == kind}
     return kind, list(stacks.values())
+
+
+def ready_ammunition(pc, log):
+    """Equip spare rounds, or resupply an assisted expedition that ran out."""
+    import os
+    import ie_itemrt
+    kind, stacks = ammunition(pc)
+    if kind not in (0, 1, 2):  # thrown weapons need no separate stack
+        return True
+    usable = [s for s in stacks if s.obj_get_int(obj_f_ammo_quantity) > 0]
+    if not usable and os.environ.get('IWDAP_NEXT_REGION') == '1' and os.environ.get('IWDAP_COMBAT_ASSIST') != '0':
+        prefix = '00' if driver().GAME['g'] == 'iwd2' else ''
+        res = prefix + ('arow01', 'bolt01', 'bull01')[kind]
+        bundle = ie_itemrt.make(res, pc.location, 40)
+        if bundle:
+            transferred = ie_itemrt.transfer(pc, bundle)
+            usable = [s for s in ammunition(pc)[1] if s.obj_get_int(obj_f_ammo_quantity) > 0]
+            if usable:
+                log('ASSIST resupplied %s with %s' % (pc, res))
+            elif not transferred and bundle:
+                bundle.destroy()
+    if usable:
+        pc.item_wield(usable[0], item_wear_ammo)
+    return bool(pc.get_ammo_used())
 
 
 def stock_ammunition(st):

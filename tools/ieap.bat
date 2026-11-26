@@ -9,6 +9,7 @@ rem   iwd-ch1   IWD new game -> prologue -> AR2000 (AUTOPLAYER_SCENARIO=iwd_ch1,
 rem             the driver starts the new game itself from the main menu with the pregenerated party. If the game
 rem             crashes on the way (known: on the AR1006 re-entry), it is relaunched once or twice from the autosave.
 rem   iwd2-ch1  IWD2 new game -> Shawford chain -> palisade -> Ulbrec (AUTOPLAYER_SCENARIO=iwd2_ch1, module ToEE). SAVE "menu".
+rem   Set IWDAP_NEXT_REGION=1 to continue to the Vale of Shadows or Shaengarne Bridge.
 rem   Chapter runs pause 3-7.5 seconds per dialogue line and play movies normally.
 rem   Set IWDAP_MOVIES=0 to skip converted movies, or 1 to play them in older tours too.
 rem   SAVE     the save to load: its file name without extension, e.g. slot0007 for modules\IWD\Save\slot0007.tfaf;
@@ -28,6 +29,7 @@ if /i "%GAME%"=="iwd2-ch1" (set "AUTOPLAYER_SCENARIO=iwd2_ch1" & set "MOD=ToEE")
 if not defined MOD goto usage
 if "%SAVE%"=="" goto usage
 if not exist "%~dp0TemplePlus.exe" (echo no TemplePlus.exe next to %~nx0 & exit /b 1)
+set "TP_AUTOLOAD="
 if /i not "%SAVE%"=="menu" set "TP_AUTOLOAD=%SAVE%"
 set "TP_AUTOEXEC=from templeplus import autoplayer; autoplayer.play_new_game()"
 set "IWDAP_LOG=%~dp0ieap-%GAME%.log"

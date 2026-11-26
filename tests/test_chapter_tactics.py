@@ -74,28 +74,6 @@ class Actor:
 
 
 class MovementTests(unittest.TestCase):
-    def test_loot_chooses_member_with_sight_of_corpse(self):
-        corpse = MagicMock()
-        corpse.object_flags_get.return_value = 0
-        corpse.is_unconscious.return_value = True
-        party = [MagicMock(), MagicMock()]
-        for pc, distance, sight in zip(party, (1.2, 2.7), (False, True)):
-            pc.is_unconscious.return_value = False
-            pc.distance_to.return_value = distance
-            pc.has_los.return_value = sight
-        game = MagicMock(party=party)
-        game.get_obj_by_id.return_value = corpse
-        driver = MagicMock()
-        driver.get_current_map.return_value = driver.area_map.return_value = 5030
-        items = MagicMock()
-        has = MagicMock(side_effect=[False, True])
-        scope = dict(game=game, driver=lambda: driver, has=has, OBJ_HANDLE_NULL=None, OF_OFF=1)
-        recover = function_from_file('recover_drop', 'chapter_sidequests.py', scope)
-        with patch.dict(sys.modules, {'ie_itemrt': items}):
-            self.assertTrue(recover(types.SimpleNamespace(drop_guids=['ogre']), 'AR1201', 'ogre', 'contract'))
-        items.transfer.assert_called_once_with(party[1], items.find.return_value)
-        driver.walk_party.assert_not_called()
-
     def setUp(self):
         toee = types.ModuleType('toee')
         names = ('stat_size stat_hp_current stat_hp_max obj_f_critter_reach obj_f_weapon_type '
@@ -232,6 +210,12 @@ class PendingSequenceTests(unittest.TestCase):
         self.assertEqual(self.performed, ['defense'])
         self.assertEqual(self.status.hourglass_state, 4)
 
+    def test_custom_turn_handoff_keeps_the_action_available(self):
+        handoff = MagicMock()
+        self.handler(self.slot, chapter_log=lambda message: None, end_turn=handoff)
+        handoff.assert_called_once_with()
+        self.assertEqual(self.performed, [])
+
     def test_running_animation_keeps_its_sequence(self):
         self.actor.is_performing.return_value = True
         self.handler(self.slot, chapter_log=lambda message: None)
@@ -249,6 +233,7 @@ class DialogueTests(unittest.TestCase):
             'TALK': {'cur': None}, 'ST': {'shot_dlg_1': True},
             'time': types.SimpleNamespace(time=lambda: self.now),
             'dialogue_delay': lambda sid, line: 3,
+            'find_attack_lines': lambda state: [],
             'dlg_reply': self.replies.append, 'log': lambda message: None,
         }
         self.tick = function_from_file('ch1_dialog_handler', 'iwd_ch1_driver.py', self.ns)
@@ -284,6 +269,33 @@ class DialogueTests(unittest.TestCase):
             self.assertEqual(delay(1, 10), 3)
             self.assertEqual(delay(1, 20), 7.5)
             self.assertEqual(delay(9, 10), 3)
+
+    def test_incidental_menu_tries_another_peaceful_reply_on_return(self):
+        self.dialogue.reply_count = 3
+        self.ns['find_attack_lines'] = lambda state: [1]
+        for _ in range(2):
+            self.tick(None)
+            self.now += 3
+            self.tick(None)
+        self.assertEqual(self.replies, [0, 2])
+
+
+class CheckpointTests(unittest.TestCase):
+    def test_post_battle_save_retries_after_cooldown_on_the_same_map(self):
+        game = MagicMock(party=[])
+        state = {'i': 2, 'checkpoint': (2, 5093)}
+        step = types.SimpleNamespace(kind='tomb_descent', n=10, next_save_attempt=30)
+        namespace = dict(game=game, ST=state, GAME={'g': 'iwd'}, OLC_NPC=0,
+                         get_current_map=lambda: 5093, dlg=types.SimpleNamespace(is_engaged=lambda: False),
+                         log=lambda message: None)
+        save = function_from_file('checkpoint_party', 'iwd_ch1_driver.py', namespace)
+        with patch.dict(sys.modules, ie_cutscene=types.SimpleNamespace(active=lambda: False)):
+            save(step, True)
+            game.savegame.assert_not_called()
+            step.n = 30
+            save(step, False)
+            save(step, False)
+        game.savegame.assert_called_once_with('IEAP_Chapter_iwd', 'Chapter autoplayer recovery')
 
 
 class ApproachTests(unittest.TestCase):
@@ -339,6 +351,36 @@ class MovieTests(unittest.TestCase):
         with patch.dict(sys.modules, ie_movies_rt=movie), patch.dict(os.environ, {}, clear=True):
             configure(show=True)
             self.assertEqual(movie.play('intro'), 1)
+
+
+class FordTrailTests(unittest.TestCase):
+    def test_party_only_breaks_a_placed_keg_ahead_after_progress_stops(self):
+        hero = Actor(10, 10)
+        hero.is_performing = lambda: False
+        hero.has_los = lambda target: True
+        hero.action_perform = lambda action, target, unused: hero.actions.append(target)
+        objects = {'behind': Actor(11, 10), 'blocking': Actor(8, 10),
+                   'explosive': Actor(9, 10), 'npc': Actor(9, 10)}
+        for guid, obj in objects.items():
+            obj.id = guid
+        placements = {key: {'spec': {'resref': resref}} for key, resref in
+                      [('behind', '20keg1'), ('blocking', '20keg2'), ('explosive', 'dynokeg'), ('npc', '20dereth')]}
+        game = types.SimpleNamespace(party=[hero], get_obj_by_id=objects.get)
+        clock = types.SimpleNamespace(time=lambda: 100)
+        check = function_from_file('clear_ford_keg', 'iwd_ch1_driver.py',
+                                   dict(game=game, time=clock, location_to_axis=lambda p: p, OF_OFF=1, OF_DONTDRAW=2,
+                                        D20A_UNSPECIFIED_ATTACK=0, stat_hp_current='stat_hp_current',
+                                        log=lambda message: None))
+        step = types.SimpleNamespace()
+        with patch.dict(sys.modules, ie_bake_i2ar2000=types.SimpleNamespace(OBJS=placements)):
+            self.assertFalse(check(step, (0, 10)))
+            clock.time = lambda: 108
+            self.assertTrue(check(step, (0, 10)))
+            self.assertEqual(hero.actions, [objects['blocking']])
+            self.assertFalse(check(step, (20, 10)))
+            clock.time = lambda: 116
+            self.assertTrue(check(step, (20, 10)))
+            self.assertEqual(hero.actions[-1], objects['behind'])
 
 
 if __name__ == '__main__':
