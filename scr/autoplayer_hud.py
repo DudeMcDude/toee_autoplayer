@@ -41,6 +41,7 @@ LABELS = {
     'tomb_priest_key': 'Find the priest\'s key', 'tomb_priest_gate': 'Open the priest\'s gate',
     'gate_key': "Recover the Gate Key", 'sanctum_key': "Recover the Sanctum Key",
     'iwd_easthaven': 'Tour Easthaven', 'iwd2_targos': 'Tour Targos',
+    'dancing_hut': 'Dancing Hut / Opening',
     'new_game': 'Start a new game', 'newgame': 'Enter the starting area',
     'normaldiff': 'Choose normal difficulty', 'align': 'Choose party alignment',
     'align_ok': 'Confirm party alignment', 'begin': 'Begin the adventure',
@@ -134,6 +135,11 @@ def goal_lines(player):
                            'I2AR2000': 'Shaengarne Ford', 'I2AR2001': 'the orc camp',
                            'I2AR2102': 'Shaengarne Bridge'}.get(area, area)
             parents.append('Walk to ' + destination)
+    elif current.scheme_id == 'dancing_hut' and stage == 'play':
+        import dancing_hut_driver
+        step = dancing_hut_driver.current_step()
+        if step:
+            parents.append(step.label)
     elif current.scheme_id in ('iwd_easthaven', 'iwd2_targos'):
         import iwd_easthaven_controller as tour
         plan = tour.ST.get('plan') or []

@@ -42,6 +42,11 @@ def play_new_game():
         autoplayer = playtester.Playtester()
         iwd_easthaven_controller.setup_playtester(autoplayer, scenario)
         return
+    if scenario in ('dancing_hut', 'dancing_hut_chapter'):
+        import dancing_hut_driver
+        autoplayer = playtester.Playtester()
+        dancing_hut_driver.setup_playtester(autoplayer)
+        return
     import new_game_controller
     autoplayer = playtester.Playtester()
     new_game_controller.setup_playtester(autoplayer)

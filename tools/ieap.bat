@@ -2,13 +2,14 @@
 rem ie2toee quest-giver autoplayer tour on native Windows (the box runs tools/ieap_box.sh under Wine instead).
 rem Put this file and ieap_chapter_process.js next to the AUTOPLAYER TemplePlus.exe.
 rem
-rem usage: ieap.bat iwd|iwd2|iwd-ch1|iwd2-ch1 SAVE [GAMEDIR]
+rem usage: ieap.bat iwd|iwd2|iwd-ch1|iwd2-ch1|dh-opening SAVE [GAMEDIR]
 rem   iwd       IWD Easthaven tour   (AUTOPLAYER_SCENARIO=easthaven, module IWD)
 rem   iwd2      IWD2 Targos tour     (AUTOPLAYER_SCENARIO=targos,    module ToEE)
 rem   iwd-ch1   IWD new game -> prologue -> AR2000 (AUTOPLAYER_SCENARIO=iwd_ch1, module IWD). Use SAVE "menu":
 rem             the driver starts the new game itself from the main menu with the pregenerated party. If the game
 rem             crashes on the way (known: on the AR1006 re-entry), it is relaunched once or twice from the autosave.
 rem   iwd2-ch1  IWD2 new game -> Shawford chain -> palisade -> Ulbrec (AUTOPLAYER_SCENARIO=iwd2_ch1, module ToEE). SAVE "menu".
+rem   dh-opening  Dancing Hut new game -> Varangian Village -> Loche Skye -> Bone Castle. Use SAVE "menu" or a route checkpoint.
 rem   Set IWDAP_NEXT_REGION=1 to continue to the Vale of Shadows or Shaengarne Bridge.
 rem   Chapter runs pause 3-7.5 seconds per dialogue line and play movies normally.
 rem   Set IWDAP_MOVIES=0 to skip converted movies, or 1 to play them in older tours too.
@@ -26,6 +27,7 @@ if /i "%GAME%"=="iwd"  (set "AUTOPLAYER_SCENARIO=easthaven" & set "MOD=IWD")
 if /i "%GAME%"=="iwd2" (set "AUTOPLAYER_SCENARIO=targos" & set "MOD=ToEE")
 if /i "%GAME%"=="iwd-ch1"  (set "AUTOPLAYER_SCENARIO=iwd_ch1" & set "MOD=IWD")
 if /i "%GAME%"=="iwd2-ch1" (set "AUTOPLAYER_SCENARIO=iwd2_ch1" & set "MOD=ToEE")
+if /i "%GAME%"=="dh-opening" (set "AUTOPLAYER_SCENARIO=dancing_hut" & set "MOD=DancingHut")
 if not defined MOD goto usage
 if "%SAVE%"=="" goto usage
 if not exist "%~dp0TemplePlus.exe" (echo no TemplePlus.exe next to %~nx0 & exit /b 1)
@@ -94,7 +96,8 @@ goto run
 :after
 if not "%GAMEDIR%"=="" move /y "%INI%.ieap-backup" "%INI%" >nul
 if exist "%IWDAP_LOG%" findstr /b "RESULT SKIP ANOMALY SUMMARY TABLE" "%IWDAP_LOG%"
+if /i "%GAME%"=="dh-opening" if exist "%IWDAP_LOG%" findstr /b /c:"DHAP PASS" /c:"DHAP FAIL" "%IWDAP_LOG%"
 exit /b 0
 :usage
-echo usage: %~nx0 iwd^|iwd2^|iwd-ch1^|iwd2-ch1 SAVE [GAMEDIR]
+echo usage: %~nx0 iwd^|iwd2^|iwd-ch1^|iwd2-ch1^|dh-opening SAVE [GAMEDIR]
 exit /b 2
