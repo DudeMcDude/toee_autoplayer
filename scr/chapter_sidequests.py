@@ -247,21 +247,32 @@ def encounter(area, ident, ie_point, check, loot=None, archery=False):
     return run
 
 
-def container_item(area, box_name, item):
+def container_item(area, box_name, item, require_click=False):
     def run(st):
         import ie_itemrt
         d = driver()
         if has(item):
             return True
+        if require_click:
+            st.require_click = True
         if not arrive(st, area) or st.n % 10 != 1:
             return False
         containers = ie_itemrt.CONTAINERS.get(area, ie_itemrt.CONTAINERS.get(area[-6:], []))
-        spec = next(c for c in containers if c['name'].lower() == box_name.lower())
+        matches = [c for c in containers if c['name'].lower() == box_name.lower()]
+        spec = next((c for c in matches if any(res == item for res, qty in c.get('items', []))), None)
+        if spec is None:
+            if len(matches) != 1:
+                return d.fail('could not locate %s in %s (%s)' % (item, box_name, area))
+            spec = matches[0]
         x, y = map(int, spec['toee'])
         boxes = [b for b in game.obj_list_vicinity(location_from_axis(x,y), OLC_CONTAINER)
                  if b.proto == spec['proto'] and location_to_axis(b.location) == (x,y)]
+        if len(boxes) > 1:
+            # Distinct IE interaction points can fall on the same ToEE tile.
+            boxes = [b for b in boxes if ie_itemrt.find(b, item)]
         if len(boxes) != 1:
-            return d.fail('missing container ' + box_name)
+            return d.fail('expected one %s for %s at %s in %s, found %d' %
+                          (box_name, item, (x, y), area, len(boxes)))
         box = boxes[0]
         party = [pc for pc in game.party if not pc.is_unconscious()]
         pc = min(party, key=lambda member: member.distance_to(box))
@@ -328,6 +339,30 @@ def ammunition(pc):
     stacks = {item.id: item for item in ie_itemrt._inv(pc) if item.type == obj_t_ammo
               and item.obj_get_int(obj_f_ammo_type) == kind}
     return kind, list(stacks.values())
+
+
+def ready_ammunition(pc, log):
+    """Equip spare rounds, or resupply an assisted expedition that ran out."""
+    import os
+    import ie_itemrt
+    kind, stacks = ammunition(pc)
+    if kind not in (0, 1, 2):  # thrown weapons need no separate stack
+        return True
+    usable = [s for s in stacks if s.obj_get_int(obj_f_ammo_quantity) > 0]
+    if not usable and os.environ.get('IWDAP_NEXT_REGION') == '1' and os.environ.get('IWDAP_COMBAT_ASSIST') != '0':
+        prefix = '00' if driver().GAME['g'] == 'iwd2' else ''
+        res = prefix + ('arow01', 'bolt01', 'bull01')[kind]
+        bundle = ie_itemrt.make(res, pc.location, 40)
+        if bundle:
+            transferred = ie_itemrt.transfer(pc, bundle)
+            usable = [s for s in ammunition(pc)[1] if s.obj_get_int(obj_f_ammo_quantity) > 0]
+            if usable:
+                log('ASSIST resupplied %s with %s' % (pc, res))
+            elif not transferred and bundle:
+                bundle.destroy()
+    if usable:
+        pc.item_wield(usable[0], item_wear_ammo)
+    return bool(pc.get_ammo_used())
 
 
 def stock_ammunition(st):

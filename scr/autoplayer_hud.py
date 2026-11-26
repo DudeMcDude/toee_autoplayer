@@ -2,6 +2,18 @@
 import re
 
 LABELS = {
+    'next_region': 'Travel to the next region', 'arundel': 'Speak with Arundel',
+    'vale': 'Enter the Vale of Shadows', 'bridge': 'Secure Shaengarne Bridge',
+    'tomb': "Enter Kresselack's tomb",
+    'tomb_descent': "Descend to the second tomb level",
+    'tomb_foyer': 'Open the door at the foot of the stairs',
+    'tomb_mausoleum_key': 'Find the Mausoleum Key', 'tomb_west_gate': 'Open the western mausoleum door',
+    'tomb_room_key': 'Search the desk for the key', 'tomb_east_gate': 'Open the eastern mausoleum door',
+    'tomb_inner_gate': 'Unlock the inner chamber', 'tomb_talisman': 'Recover the Black Wolf Talisman',
+    'tomb_symbol': 'Recover the holy symbol', 'tomb_symbol_gate': 'Open the sealed door with the holy symbol',
+    'tomb_gate': 'Open the tomb gate', 'tomb_sanctum': 'Open the sanctum',
+    'tomb_priest_key': 'Find the priest\'s key', 'tomb_priest_gate': 'Open the priest\'s gate',
+    'gate_key': "Recover the Gate Key", 'sanctum_key': "Recover the Sanctum Key",
     'iwd_easthaven': 'Tour Easthaven', 'iwd2_targos': 'Tour Targos',
     'new_game': 'Start a new game', 'newgame': 'Enter the starting area',
     'normaldiff': 'Choose normal difficulty', 'align': 'Choose party alignment',
@@ -48,7 +60,15 @@ def goal_lines(player):
         name = label(entry.scheme_id)
         if entry.scheme_id == 'iwd_ch1':
             import iwd_ch1_driver as chapter
-            name = ('Targos' if chapter.GAME['g'] == 'iwd2' else 'Easthaven') + ' / Chapter 1'
+            area = (chapter.area_of(game.leader.map) or '') if game.party else ''
+            if area.startswith('I2AR2'):
+                name = 'Shaengarne / Chapter 1'
+            elif area.startswith('AR3'):
+                name = 'Vale of Shadows / Chapter 1'
+            elif area.startswith('AR2'):
+                name = 'Kuldahar / Chapter 1'
+            else:
+                name = 'Targos / Prologue' if chapter.GAME['g'] == 'iwd2' else 'Easthaven / Prologue'
         parents.append(name)
     current = stack[0]
     stage = current.get_cur_stage_id()
@@ -72,7 +92,10 @@ def goal_lines(player):
             area = state['walking_to']
             destination = {'AR1000': 'Easthaven', 'AR1201': 'the orc cave',
                            'I2AR1000': 'the docks', 'I2AR1100': 'Targos town',
-                           'I2AR1200': 'the palisade', 'I2AR1201': 'Shawford'}.get(area, area)
+                           'I2AR1200': 'the palisade', 'I2AR1201': 'Shawford',
+                           'AR3501': "Kresselack's tomb", 'AR3502': 'the second tomb level',
+                           'I2AR2000': 'Shaengarne Ford', 'I2AR2001': 'the orc camp',
+                           'I2AR2102': 'Shaengarne Bridge'}.get(area, area)
             parents.append('Walk to ' + destination)
     elif current.scheme_id in ('iwd_easthaven', 'iwd2_targos'):
         import iwd_easthaven_controller as tour

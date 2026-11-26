@@ -9,6 +9,7 @@ rem   iwd-ch1   IWD new game -> prologue -> AR2000 (AUTOPLAYER_SCENARIO=iwd_ch1,
 rem             the driver starts the new game itself from the main menu with the pregenerated party. If the game
 rem             crashes on the way (known: on the AR1006 re-entry), it is relaunched once or twice from the autosave.
 rem   iwd2-ch1  IWD2 new game -> Shawford chain -> palisade -> Ulbrec (AUTOPLAYER_SCENARIO=iwd2_ch1, module ToEE). SAVE "menu".
+rem   Set IWDAP_NEXT_REGION=1 to take Arundel's quest and enter the Vale of Shadows.
 rem   Chapter runs pause 3-7.5 seconds per dialogue line and play movies normally.
 rem   Set IWDAP_MOVIES=0 to skip converted movies, or 1 to play them in older tours too.
 rem   SAVE     the save to load: its file name without extension, e.g. slot0007 for modules\IWD\Save\slot0007.tfaf;

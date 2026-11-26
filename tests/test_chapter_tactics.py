@@ -249,6 +249,7 @@ class DialogueTests(unittest.TestCase):
             'TALK': {'cur': None}, 'ST': {'shot_dlg_1': True},
             'time': types.SimpleNamespace(time=lambda: self.now),
             'dialogue_delay': lambda sid, line: 3,
+            'find_attack_lines': lambda state: [],
             'dlg_reply': self.replies.append, 'log': lambda message: None,
         }
         self.tick = function_from_file('ch1_dialog_handler', 'iwd_ch1_driver.py', self.ns)
@@ -284,6 +285,33 @@ class DialogueTests(unittest.TestCase):
             self.assertEqual(delay(1, 10), 3)
             self.assertEqual(delay(1, 20), 7.5)
             self.assertEqual(delay(9, 10), 3)
+
+    def test_incidental_menu_tries_another_peaceful_reply_on_return(self):
+        self.dialogue.reply_count = 3
+        self.ns['find_attack_lines'] = lambda state: [1]
+        for _ in range(2):
+            self.tick(None)
+            self.now += 3
+            self.tick(None)
+        self.assertEqual(self.replies, [0, 2])
+
+
+class CheckpointTests(unittest.TestCase):
+    def test_post_battle_save_retries_after_cooldown_on_the_same_map(self):
+        game = MagicMock(party=[])
+        state = {'i': 2, 'checkpoint': (2, 5093)}
+        step = types.SimpleNamespace(kind='tomb_descent', n=10, next_save_attempt=30)
+        namespace = dict(game=game, ST=state, GAME={'g': 'iwd'}, OLC_NPC=0,
+                         get_current_map=lambda: 5093, dlg=types.SimpleNamespace(is_engaged=lambda: False),
+                         log=lambda message: None)
+        save = function_from_file('checkpoint_party', 'iwd_ch1_driver.py', namespace)
+        with patch.dict(sys.modules, ie_cutscene=types.SimpleNamespace(active=lambda: False)):
+            save(step, True)
+            game.savegame.assert_not_called()
+            step.n = 30
+            save(step, False)
+            save(step, False)
+        game.savegame.assert_called_once_with('IEAP_Chapter_iwd', 'Chapter autoplayer recovery')
 
 
 class ApproachTests(unittest.TestCase):
@@ -339,6 +367,36 @@ class MovieTests(unittest.TestCase):
         with patch.dict(sys.modules, ie_movies_rt=movie), patch.dict(os.environ, {}, clear=True):
             configure(show=True)
             self.assertEqual(movie.play('intro'), 1)
+
+
+class FordTrailTests(unittest.TestCase):
+    def test_party_only_breaks_a_placed_keg_ahead_after_progress_stops(self):
+        hero = Actor(10, 10)
+        hero.is_performing = lambda: False
+        hero.has_los = lambda target: True
+        hero.action_perform = lambda action, target, unused: hero.actions.append(target)
+        objects = {'behind': Actor(11, 10), 'blocking': Actor(8, 10),
+                   'explosive': Actor(9, 10), 'npc': Actor(9, 10)}
+        for guid, obj in objects.items():
+            obj.id = guid
+        placements = {key: {'spec': {'resref': resref}} for key, resref in
+                      [('behind', '20keg1'), ('blocking', '20keg2'), ('explosive', 'dynokeg'), ('npc', '20dereth')]}
+        game = types.SimpleNamespace(party=[hero], get_obj_by_id=objects.get)
+        clock = types.SimpleNamespace(time=lambda: 100)
+        check = function_from_file('clear_ford_keg', 'iwd_ch1_driver.py',
+                                   dict(game=game, time=clock, location_to_axis=lambda p: p, OF_OFF=1, OF_DONTDRAW=2,
+                                        D20A_UNSPECIFIED_ATTACK=0, stat_hp_current='stat_hp_current',
+                                        log=lambda message: None))
+        step = types.SimpleNamespace()
+        with patch.dict(sys.modules, ie_bake_i2ar2000=types.SimpleNamespace(OBJS=placements)):
+            self.assertFalse(check(step, (0, 10)))
+            clock.time = lambda: 108
+            self.assertTrue(check(step, (0, 10)))
+            self.assertEqual(hero.actions, [objects['blocking']])
+            self.assertFalse(check(step, (20, 10)))
+            clock.time = lambda: 116
+            self.assertTrue(check(step, (20, 10)))
+            self.assertEqual(hero.actions[-1], objects['behind'])
 
 
 if __name__ == '__main__':

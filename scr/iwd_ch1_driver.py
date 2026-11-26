@@ -130,7 +130,14 @@ def ch1_dialog_handler(slot):
 		if v >= 3 or c['replies'] > 60:
 			pick = N - 1
 	if pick is None:
-		pick = 0
+		# Incidental conversations can return to a menu of questions. Keep
+		# the first visit natural, then try a different reply on each return.
+		visits = TALK.setdefault('incidental_visits', {})
+		count = visits.get(line, 0)
+		attacks = find_attack_lines(ds)
+		options = [i for i in range(N) if i not in attacks] or list(range(N))
+		pick = options[count % len(options)]
+		visits[line] = count + 1
 	log('REPLY sid %d line %d: %d replies -> pick %d (npc line %d)' % (ds.script_id, ds.line_number, N, pick, ds.get_npc_reply_id(pick)))
 	dlg_reply(pick)
 	return 150
@@ -162,14 +169,16 @@ class Step(object):
 		self.kind, self.n = kind, 0
 		self.__dict__.update(kw)
 
+def prepare_dialogue(st):
+	TALK['cur'] = {'sid': st.sid, 'goals': st.goals, 'dist': st.dist, 'exit_dist': st.exit_dist,
+	               'visits': {}, 'replies': 0, 'hit': 0}
+	TALK.pop('line', None)
+
+
 def talk_step(st, ident, area, goal, until, speaker=None):
 	"""Choose dialogue replies leading to the goal and verify the resulting quest state."""
 	if until():
 		return 1
-	if get_current_map() != area_map(area):
-		return walk_to_area(st, area)
-	if dlg.is_engaged():
-		return 0
 	if not hasattr(st, 'sid'):
 		st.arrived = st.n
 		st.sid, src = npc_script(ident, area[-6:])     # (IWD2 travel keys carry an I2 prefix)
@@ -179,8 +188,14 @@ def talk_step(st, ident, area, goal, until, speaker=None):
 		st.goals, st.dist, st.talks = goals, E.dist_to_goal(npc, to, goals), 0
 		st.exit_dist = E.dist_to_goal(npc, to, set(r for r in to if to[r] <= 0))
 		log('TALK %s sid %d goal %r: %d goal replies' % (ident, st.sid, goal, len(goals)))
+		# A character can start talking as soon as the party steps inside.
+		prepare_dialogue(st)
 	if not st.goals:
 		return fail('no matching reply for %s: %s' % (ident, goal))
+	if get_current_map() != area_map(area):
+		return walk_to_area(st, area)
+	if dlg.is_engaged():
+		return 0
 	if st.talks >= 4:
 		return fail('%s: %s not reached after %d conversations' % (ident, goal, st.talks))
 	if st.n >= getattr(st, 'next_talk', 0):
@@ -236,8 +251,7 @@ def talk_step(st, ident, area, goal, until, speaker=None):
 					return 0
 			walk_party(st, (x, y), 6, pc)
 			return 0
-		TALK['cur'] = {'sid': st.sid, 'goals': st.goals, 'dist': st.dist, 'exit_dist': st.exit_dist, 'visits': {}, 'replies': 0, 'hit': 0}
-		TALK.pop('line', None)
+		prepare_dialogue(st)
 		st.talks += 1
 		log('TALK %s #%d (%s)' % (ident, st.talks, location_to_axis(o.location)))
 		chapter_camera.frame(o, pc)
@@ -561,6 +575,12 @@ def open_door_on_route(pc, dest):
 		candidates.append((vx*vx+vy*vy,spec,portal))
 	for _,spec,portal in sorted(candidates,key=lambda item:item[0]):
 		if pc.distance_to(portal) <= 7:
+			if spec.get('script'):
+				import controller_ui_util as ui
+				ui.select_party(list(game.party).index(pc))
+				game.scroll_to(portal.location)
+				ok, message = ui.verified_click(portal, 'use', log, fallback=None)
+				return ok
 			portal.portal_toggle_open()
 			log('OPEN %s while approaching %s' % (spec['name'],dest))
 			return True
@@ -680,7 +700,7 @@ def walk_to_area(st, area):
 	if walk_party(st, center, 5 if st.exit_clicks < 2 else 2) and st.n >= st.next_click:
 		st.next_click = st.n + 35
 		st.exit_clicks += 1
-		if st.exit_clicks > 2:
+		if st.exit_clicks > 2 and not region.get('world_jump') and not getattr(st, 'require_click', False):
 			import ie_travel
 			log('EXIT using %s at %s -> %s' % (region['name'], location_to_axis(game.leader.location), hop[1]))
 			ie_travel.travel(region)
@@ -688,6 +708,11 @@ def walk_to_area(st, area):
 		icon, unused = E.icon_for(*hop)
 		if icon != OBJ_HANDLE_NULL:
 			import controller_ui_util as ui
+			if getattr(st, 'require_click', False):
+				# The previously selected combatant may still be in the last room.
+				players = [(i, pc) for i, pc in enumerate(game.party) if pc.type == obj_t_pc and not pc.is_unconscious()]
+				if players:
+					ui.select_party(min(players, key=lambda pair: pair[1].distance_to(icon))[0])
 			game.scroll_to(icon.location)
 			ui.verified_click(icon, 'jump', log, fallback=None)
 	return 0
@@ -773,7 +798,9 @@ def step_fight(st, area, flag):
 		return 1
 	if get_current_map() != area_map('I2' + area):
 		return walk_to_area(st, 'I2' + area)
-	if st.n > 3600:
+	if not hasattr(st, 'fight_start'):
+		st.fight_start = st.n
+	if st.n - st.fight_start > 3600:
 		return fail('%s: the battle did not set %s' % (area, flag))
 	if st.n % 12 != 1:
 		return 0
@@ -998,12 +1025,14 @@ def assist_party(in_combat):
 
 def checkpoint_party(st, after_battle):
 	import ie_cutscene
+	if after_battle:
+		st.pending_battle_save = True
 	if st.kind in ('newgame','greet') or dlg.is_engaged() or ie_cutscene.active():
 		return
 	if any(p.is_unconscious() or p.stat_level_get(stat_hp_current) <= 0 for p in game.party):
 		return
 	key = (ST['i'], get_current_map())
-	if not after_battle and ST.get('checkpoint') == key:
+	if not getattr(st, 'pending_battle_save', False) and ST.get('checkpoint') == key:
 		return
 	if st.n < getattr(st, 'next_save_attempt', 0):
 		return
@@ -1014,6 +1043,7 @@ def checkpoint_party(st, after_battle):
 	filename = 'IEAP_Chapter_' + GAME['g']
 	if game.savegame(filename, 'Chapter autoplayer recovery'):
 		ST['checkpoint'] = key
+		st.pending_battle_save = False
 		log('CHECKPOINT %s on map %d' % (st.kind, key[1]))
 
 
@@ -1190,11 +1220,357 @@ def recover_after_battle(st, prepare=False, heal_only=False):
 		return False
 	return True
 
+def next_region(st):
+	import ie_travel_data as data
+	targos = GAME['g'] == 'iwd2'
+	destination = 'I2AR2000' if targos else 'AR2100'
+	if destination not in data.AREAS:
+		return fail('next region missing from converted install: ' + destination)
+	if targos and not V('AR2000_Revealed'):
+		return fail('Ulbrec has not revealed Shaengarne')
+	if get_current_map() != area_map(destination):
+		return walk_to_area(st, destination)
+	if V('Chapter') < 1:
+		st.arrival_tick = getattr(st, 'arrival_tick', st.n)
+		return st.n - st.arrival_tick > 200 and fail('arrival script did not advance the chapter')
+	shot('shaengarne_arrival' if targos else 'kuldahar_arrival')
+	log('PASS next region reached: ' + destination)
+	return 1
+
+
+def enter_vale(st):
+	if not V('Vale_Quest'):
+		return fail('Arundel has not assigned the Vale of Shadows')
+	if get_current_map() != area_map('AR3000'):
+		st.require_click = True
+		return walk_to_area(st, 'AR3000')
+	shot('vale_arrival')
+	log('PASS reached the Vale of Shadows with Arundel\'s quest')
+	return 1
+
+
+def use_chapter_portal(st, area, name):
+	import ie_doors, controller_ui_util as ui
+	st.require_click = True
+	if get_current_map() != area_map(area):
+		return walk_to_area(st, area)
+	if getattr(st, 'portal_goal', None) != name:
+		st.portal_goal, st.portal_start, st.next_use = name, st.n, 0
+	if st.n - st.portal_start > 1200:
+		return fail('could not open ' + name)
+	for spec, portal, last in ie_doors._doors:
+		if spec['name'] != name:
+			continue
+		if ie_doors._is_open(portal):
+			return True
+		players = [(i, pc) for i, pc in enumerate(game.party) if pc.type == obj_t_pc and not pc.is_unconscious()]
+		i, pc = min(players, key=lambda pair: pair[1].distance_to(portal))
+		if pc.distance_to(portal) > 6:
+			walk_party(st, spec['loc'][:2], 2, pc)
+		elif st.n >= st.next_use:
+			st.next_use = st.n + 35
+			ui.select_party(i)
+			game.scroll_to(portal.location)
+			ok, message = ui.verified_click(portal, 'use', log, fallback=None)
+			if ok:
+				log('USE %s from %s: %s' % (name, location_to_axis(pc.location), message))
+		return False
+	return False
+
+
+_TOMB_CHAPEL = ((471,478), (461,475), (450,481), (444,485), (451,491), (462,496))
+_TOMB_STAIRS = ((464,500), (455,500), (448,499), (446,504), (455,508), (462,511))
+
+
+def follow_tomb_aisle(st, aisle):
+	if not hasattr(st, 'aisle_index'):
+		st.aisle_index, st.aisle_started = 0, st.n
+	if st.aisle_index >= len(aisle):
+		return True
+	point = aisle[st.aisle_index]
+	if walk_party(st, point, 2):
+		st.aisle_index += 1
+		st.aisle_started = st.n
+	elif st.n - st.aisle_started > 600:
+		fail('could not walk the tomb aisle to %s' % (point,))
+	return False
+
+
+def recover_mausoleum_key(st):
+	if side.has('keymaus'):
+		return True
+	st.require_click = True
+	if get_current_map() == area_map('AR3502'):
+		st.from_stairs = True
+		walk_to_area(st, 'AR3501')
+		return False
+	if get_current_map() != area_map('AR3501'):
+		return fail('the mausoleum key is on the first tomb level')
+	aisle = tuple(reversed(_TOMB_STAIRS)) if getattr(st, 'from_stairs', False) else _TOMB_CHAPEL
+	if not follow_tomb_aisle(st, aisle) or not use_chapter_portal(st, 'AR3501', 'AR3501Door4'):
+		return False
+	return side.container_item('AR3501', 'Sarcophagus', 'keymaus', require_click=True)(st)
+
+
+def open_west_mausoleum(st):
+	# The western door is around the corner from the level-two entrance.
+	if not follow_tomb_aisle(st, ((472, 499), (470, 489), (474, 479), (470, 469))):
+		return False
+	return use_chapter_portal(st, 'AR3502', 'AR3502Door4')
+
+
+def reach_western_desk(st):
+	if not follow_tomb_aisle(st, ((460, 473), (450, 477), (442, 479))):
+		return False
+	if not use_chapter_portal(st, 'AR3502', 'AR3502Door5'):
+		return False
+	return side.container_item('AR3502', 'Desk', 'keynrm', require_click=True)(st)
+
+
+def open_inner_mausoleum(st):
+	# Follow the eastern aisle with the PC who just opened its outer door.
+	aisle = ((501, 488), (504, 498), (508, 504))
+	if not hasattr(st, 'aisle_index'):
+		start = location_from_axis(497, 483)
+		walker = min((pc for pc in game.party if not pc.is_unconscious()), key=lambda pc: pc.distance_to(start))
+		st.walk_leader = walker.id
+	if not follow_tomb_aisle(st, aisle):
+		return False
+	return use_chapter_portal(st, 'AR3502', 'AR3502Door1')
+
+
+def enter_tomb_level(st, area):
+	st.require_click = True
+	if area == 'AR3502' and get_current_map() == area_map('AR3501'):
+		# The stairs are across a wall. Follow the west aisle and double
+		# back around the chapel before approaching the stairway door.
+		aisle = _TOMB_STAIRS if side.has('keymaus') else _TOMB_CHAPEL + _TOMB_STAIRS
+		if not follow_tomb_aisle(st, aisle):
+			return False
+	if get_current_map() != area_map(area):
+		return walk_to_area(st, area)
+	if V(area + '_visited'):
+		shot('kresselack_tomb_' + area.lower())
+		log('PASS entered Kresselack\'s tomb on foot: ' + area)
+		return 1
+	st.tomb_arrival = getattr(st, 'tomb_arrival', st.n)
+	return st.n - st.tomb_arrival > 150 and fail('the tomb arrival script did not register')
+
+
+def clear_ford_keg(st, dest):
+	"""When the trail is blocked, break a nearby ordinary keg with a party weapon."""
+	import ie_bake_i2ar2000 as ford
+	party = [pc for pc in game.party if not pc.is_unconscious()]
+	if not party:
+		return False
+	if getattr(st, 'keg_destination', None) != dest:
+		st.keg_destination = dest
+		st.ford_best, st.ford_retry_at, st.ford_keg = 999, 0, None
+	x, y = dest
+	def remaining(obj):
+		px, py = location_to_axis(obj.location)
+		return max(abs(px-x), abs(py-y))
+	distance = min(remaining(pc) for pc in party)
+	now = time.time()
+	if distance <= st.ford_best - 2:
+		st.ford_best, st.ford_retry_at = distance, now + 8
+	if now < st.ford_retry_at:
+		return False
+	st.ford_retry_at = now + 8
+	candidates = []
+	for guid, entry in ford.OBJS.items():
+		if entry.get('spec', {}).get('resref') not in ('20keg1', '20keg2', '20keg3'):
+			continue
+		keg = game.get_obj_by_id(guid)
+		if not keg or keg.is_unconscious() or keg.object_flags_get() & (OF_OFF | OF_DONTDRAW):
+			continue
+		if remaining(keg) >= distance:
+			continue
+		for pc in party:
+			if pc.distance_to(keg) <= 15 and pc.has_los(keg) and not pc.is_performing():
+				candidates.append((pc.distance_to(keg), pc, keg))
+	if not candidates:
+		return False
+	_, pc, keg = min(candidates, key=lambda c: c[0])
+	st.ford_keg = keg.id
+	# A prop can leave initiative after a single swing. Keep trying it while
+	# the party is stalled. Walking two tiles earns a new full progress window.
+	st.ford_retry_at = now + 3
+	try:
+		pc.action_perform(D20A_UNSPECIFIED_ATTACK, keg, 0)
+	except RuntimeError as exc:
+		if 'Target Invalid' not in str(exc):
+			raise
+		st.ford_keg = None
+		return False
+	log('FORD %s attacks the obstructing keg at %s (%d HP)' % (pc, location_to_axis(keg.location),
+	    keg.stat_level_get(stat_hp_current)))
+	return True
+
+
+def help_dereth(st):
+	"""Clear the two orc camps and ask Dereth to open the trail to the far bank."""
+	import ie_bake_i2ar2000 as ford
+	import ie_runtime as rt
+	for team, flag in (('T3_', 'SR_Dereth_Freed'), ('T4_', 'SR_Cleared_House')):
+		if V(flag) >= 2:
+			continue
+		if getattr(st, 'ford_team', None) != team:
+			st.ford_team, st.team_start, st.team_retry = team, st.n, 0
+			st.camp_guids = [guid for guid, entry in ford.OBJS.items()
+			                 if entry.get('spec', {}).get('actor', '').startswith(team)
+			                 and entry['spec'].get('family') != 'keg' and rt.area_spawn_allowed(entry['spec'])]
+			log('FORD clearing %s for Dereth (%d placements)' % (team.rstrip('_'), len(st.camp_guids)))
+		if st.n - st.team_start > 1000:
+			return fail('Dereth camp %s did not advance %s (value %d)' % (team, flag, V(flag)))
+		if st.n < st.team_retry:
+			return 0
+		st.team_retry = st.n + 6
+		leader = next(pc for pc in game.party if not pc.is_unconscious())
+		enemies = [game.get_obj_by_id(guid) for guid in st.camp_guids]
+		enemies = [o for o in enemies if o and not o.is_unconscious() and not o.object_flags_get() & OF_OFF]
+		if enemies:
+			target = min(enemies, key=leader.distance_to)
+			if targos_enemy(target) and leader.distance_to(target) <= 6 and not leader.is_performing():
+				leader.action_perform(D20A_UNSPECIFIED_ATTACK, target, 0)
+			else:
+				walk_party(st, location_to_axis(target.location), 2)
+		return 0
+	if not hasattr(st, 'dereth'):
+		st.dereth = Step('dereth')
+	st.dereth.n = st.n
+	return talk_step(st.dereth, '20dereth', 'I2AR2000', r'StartCutScene\(c, "20cPath1"',
+	                 lambda: bool(V('SR_Reveal_Path_1')))
+
+
+def release_ford_log(st, name):
+	# These are two original unlocked portals, one on each bank. When both
+	# are open the Ford area script removes the obstruction between them.
+	import ie_doors
+	for spec, portal, last in ie_doors._doors:
+		if spec['name'] != 'AR2000_Door2_' + name:
+			continue
+		if ie_doors._is_open(portal):
+			return True
+		if getattr(st, 'log_target', None) != name:
+			st.log_target, st.log_started = name, st.n
+		if st.n - st.log_started > 700:
+			return fail('could not reach the Ford log ' + name)
+		pc = min((p for p in game.party if not p.is_unconscious()), key=lambda p: p.distance_to(portal))
+		if pc.distance_to(portal) <= 7:
+			portal.portal_toggle_open()
+			log('FORD released ' + name)
+		else:
+			walk_party(st, spec['toggle_tile'], 2)
+		return False
+	return fail('missing Ford log ' + name)
+
+
+def shaengarne_bridge(st):
+	st.require_click = True
+	if get_current_map() == area_map('I2AR2000'):
+		import ie_travel_data as data
+		# Torak lowers the bridge after his fourth encounter at the Ford.
+		# Enter the original floor triggers and let his dialogue advance the quest.
+		call = max(2, V('SR_Torak_Talk') + 1)
+		if call == 3 and not V('SR_Reveal_Path_1'):
+			help_dereth(st)
+			return 0
+		if call == 3 and not release_ford_log(st, 'RightLog'):
+			return 0
+		if call == 3 and not V('SR_Reveal_Path_2'):
+			# The near bank faces the blocked logjam. Dereth opens the trail
+			# by the first camp, which loops around to the opposite bank.
+			trail = ((531,507), (537,501), (541,496), (540,490), (544,478), (536,466))
+			if not hasattr(st, 'ford_trail'):
+				# A recovery save may already be on the narrow far-bank trail.
+				x, y = location_to_axis(game.leader.location)
+				st.ford_trail = max([0] + [i for i, (tx,ty) in enumerate(trail)
+				                          if max(abs(x-tx), abs(y-ty)) <= 6])
+			index = st.ford_trail
+			if index < len(trail):
+				if getattr(st, 'trail_target', None) != index:
+					st.trail_target, st.trail_start = index, st.n
+					log('FORD following Dereth\'s open trail to %s' % (trail[index],))
+				if st.n - st.trail_start > 1000:
+					return fail('could not walk through Dereth\'s trail at %s' % (trail[index],))
+				if not clear_ford_keg(st, trail[index]) and walk_party(st, trail[index], 2):
+					st.ford_trail = index + 1
+				return 0
+		if call == 4 and not release_ford_log(st, 'LeftLog'):
+			return 0
+		if call <= 4:
+			name = 'Torak_Call_%d' % call
+			if getattr(st, 'ford_call', None) != call:
+				region = next((r for r in data.AREAS['I2AR2000']['triggers'] if r['name'] == name), None)
+				if region is None:
+					return fail('missing Ford encounter ' + name)
+				st.ford_call, st.ford_start = call, st.n
+				st.ford_at = tuple(int(round(v)) for v in E.region_center(region))
+				log('FORD approaching %s at %s' % (name, st.ford_at))
+			if st.n - st.ford_start > 1200:
+				return fail('could not complete %s at the Ford (SR_Torak_Talk %d)' % (name, V('SR_Torak_Talk')))
+			if not clear_ford_keg(st, st.ford_at):
+				walk_party(st, st.ford_at, 1)
+			return 0
+	if get_current_map() == area_map('I2AR2001'):
+		if not getattr(st, 'sneak_open', False):
+			st.sneak_open = use_chapter_portal(st, 'I2AR2001', 'AR2001_Door1_RealSneak')
+			return 0
+		if not side.has('22keyhg1'):
+			if not hasattr(st, 'torak_hunt'):
+				st.torak_hunt = Step('torak_hunt')
+			st.torak_hunt.n = st.n
+			side.encounter('I2AR2001', '20orcwar_29', (2804, 1130), lambda: side.has('22keyhg1'), loot='22keyhg1')(st.torak_hunt)
+			return 0
+		if not use_chapter_portal(st, 'I2AR2001', 'AR2001_Door2'):
+			return 0
+	st.ford_keg = None
+	if get_current_map() == area_map('I2AR2101') and V('Destroy_Dam_Quest') != 4:
+		if not getattr(st, 'dam_support_open', False):
+			st.dam_support_open = use_chapter_portal(st, 'I2AR2101', 'AR2101_Door2_Support1')
+			return 0
+		if not use_chapter_portal(st, 'I2AR2101', 'AR2101_Door1_Bridge'):
+			return 0
+		if not hasattr(st, 'dam_opened'):
+			st.dam_opened = st.n
+		if st.n - st.dam_opened > 300:
+			return fail('the dam cutscene did not finish after the bridge opened')
+		return 0
+	if get_current_map() != area_map('I2AR2102'):
+		return walk_to_area(st, 'I2AR2102')
+	return step_fight(st, 'AR2102', 'Shaengarne_Bridge_Cleared')
+
+
 def gs_ch1(slot):
 	if ST.get('restarting') or not len(game.party):
 		return 0
 	if ST['steps'] is None:
 		steps = STEPS2 if GAME['g'] == 'iwd2' else STEPS
+		if os.environ.get('IWDAP_NEXT_REGION') == '1':
+			steps = list(steps) + [('next_region', next_region)]
+			if GAME['g'] == 'iwd':
+				steps.append(('arundel', quest_talk('arundel', 'AR2112', 'Vale_Quest', 1)))
+				steps.append(('vale', enter_vale))
+				steps.append(('gate_key', side.container_item('AR3101', 'Statue', 'keygate', require_click=True)))
+				steps.append(('sanctum_key', side.container_item('AR3301', 'Sarcophagus', 'keysanc', require_click=True)))
+				steps.append(('tomb', lambda st: enter_tomb_level(st, 'AR3501')))
+				steps.append(('tomb_gate', lambda st: use_chapter_portal(st, 'AR3501', 'AR3501Door1')))
+				steps.append(('tomb_sanctum', lambda st: use_chapter_portal(st, 'AR3501', 'AR3501Door6')))
+				steps.append(('tomb_priest_key', side.container_item('AR3501', 'Sarcophagus', 'keyprst', require_click=True)))
+				steps.append(('tomb_priest_gate', lambda st: use_chapter_portal(st, 'AR3501', 'AR3501Door2')))
+				steps.append(('tomb_symbol', side.container_item('AR3501', 'Sarcophagus', 'holysym', require_click=True)))
+				steps.append(('tomb_symbol_gate', lambda st: use_chapter_portal(st, 'AR3501', 'AR3501Door5')))
+				steps.append(('tomb_mausoleum_key', recover_mausoleum_key))
+				steps.append(('tomb_descent', lambda st: enter_tomb_level(st, 'AR3502')))
+				steps.append(('tomb_foyer', lambda st: use_chapter_portal(st, 'AR3502', 'AR3502Door3')))
+				steps.append(('tomb_west_gate', open_west_mausoleum))
+				steps.append(('tomb_room_key', reach_western_desk))
+				steps.append(('tomb_east_gate', lambda st: use_chapter_portal(st, 'AR3502', 'AR3502Door2')))
+				steps.append(('tomb_inner_gate', open_inner_mausoleum))
+				steps.append(('tomb_talisman', side.container_item('AR3502', 'Skeleton', 'bwtalis', require_click=True)))
+			else:
+				steps.append(('bridge', shaengarne_bridge))
 		ST['steps'] = [Step(k, fn=f) for k, f in steps]
 		fr = os.environ.get('IWDAP_CH1_FROM')     # resume from a save made on the way (e.g. depart)
 		if fr:
@@ -1264,6 +1640,7 @@ def gs_ch1(slot):
 	if dlg.is_engaged():
 		return 0
 	TALK.pop('line', None)
+	TALK.pop('incidental_visits', None)
 	chapter_camera.follow()
 	hp = [pc.stat_level_get(stat_hp_current) for pc in game.party]
 	fallen = tuple(pc.id for pc, health in zip(game.party, hp) if health <= -10)
@@ -1332,7 +1709,8 @@ def gs_ch1(slot):
 				fail('combat stalled during ' + st.kind)
 		elif now >= getattr(st, 'next_combat_action', 0):
 			from new_game_controller import combat_action_handler
-			delay = combat_action_handler(slot, target_filter=targos_enemy, chapter_log=log, practice=ST.get('practice'))
+			delay = combat_action_handler(slot, target_filter=targos_enemy, chapter_log=log, practice=ST.get('practice'),
+			                             obstruction=game.get_obj_by_id(st.ford_keg) if getattr(st, 'ford_keg', None) else None)
 			st.next_combat_action = time.time() + max(150, delay) / 1000.0
 		return 0
 	import chapter_levelup

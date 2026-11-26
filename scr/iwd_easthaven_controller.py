@@ -234,6 +234,8 @@ def icon_for(area, dest_area):
 	cx, cy = r.get('anchor') or region_center(r)   # the icon sits at the anchor: search around it, not around the leader
 	best, bd = OBJ_HANDLE_NULL, 1e9                 # (from far away the leader-centred list missed AR1001's icon -> AR1014's)
 	for o in exit_icons(location_from_axis(int(cx), int(cy))):
+		if r.get('world_jump') and o.obj_get_int(obj_f_scenery_teleport_to) != r['world_jump']:
+			continue
 		x, y = _loc(o); d = (x - cx) ** 2 + (y - cy) ** 2
 		if d < bd:
 			best, bd = o, d

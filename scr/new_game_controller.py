@@ -529,7 +529,7 @@ def chapter_combat_move(actor, destination, hourglass, threats=(), chapter_log=N
 		return False
 
 
-def combat_action_handler(slot, target_filter=None, chapter_log=None, practice=None):
+def combat_action_handler(slot, target_filter=None, chapter_log=None, practice=None, obstruction=None):
 	
 	# Playtester.get_instance().interrupt()
 
@@ -627,6 +627,8 @@ def combat_action_handler(slot, target_filter=None, chapter_log=None, practice=N
 		targets = ranked_targets(obj, game.obj_list_range(obj.location, 300, OLC_NPC))
 	if chapter_log and targets:
 		slot.get_scheme_state()['battle_front'] = (obj.map, location_to_axis(targets[0].location))
+	if not targets and obstruction and obj.map == obstruction.map and not obstruction.is_unconscious():
+		targets = [obstruction]
 	if not targets: # end turn for now..
 		if chapter_log:
 			state = slot.get_scheme_state()
@@ -646,6 +648,17 @@ def combat_action_handler(slot, target_filter=None, chapter_log=None, practice=N
 
 	is_caster = obj_is_caster(obj)
 	has_ranged = obj_has_ranged_weapon(obj)
+	weapon_ready = True
+	if chapter_log and has_ranged and not obj.get_ammo_used():
+		import chapter_sidequests
+		if not chapter_sidequests.ready_ammunition(obj, chapter_log):
+			import ie_itemrt
+			melee = next((w for w in ie_itemrt._inv(obj) if w.type == obj_t_weapon
+			              and not w.obj_get_int(obj_f_weapon_flags) & OWF_RANGED_WEAPON), None)
+			if melee:
+				obj.item_wield(melee, item_wear_weapon_primary)
+			has_ranged = obj_has_ranged_weapon(obj)
+			weapon_ready = not has_ranged
 	on_dummy = practice and tgt.id == practice[0]
 	if on_dummy and bool(practice[1]) != bool(has_ranged):
 		press_space()
@@ -765,7 +778,7 @@ def combat_action_handler(slot, target_filter=None, chapter_log=None, practice=N
 		# Submit movement separately so it passes the same threat checks as fallback moves.
 		range_limit = max(5, obj.item_worn_at(item_wear_weapon_primary).obj_get_int(obj_f_weapon_range)) if has_ranged else 0
 		can_attack_here = (obj.has_los(tgt) and not threatened and obj.distance_to(tgt) <= range_limit) if has_ranged else obj.can_melee(tgt)
-		if hourglass >= 2 and 'attack' not in attempted and can_attack_here:
+		if weapon_ready and hourglass >= 2 and 'attack' not in attempted and can_attack_here:
 			attempted.add('attack')
 			try:
 				obj.action_perform(D20A_UNSPECIFIED_ATTACK, tgt, 0)
